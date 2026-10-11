@@ -1,0 +1,45 @@
+{
+  "name": "星河科技 Demo 评测集",
+  "description": "基于 demo-data/ 下 7 份虚构制度文件。expected_keywords 取自原文的关键事实（金额、时限、名称），用于判断检索到的资料和最终答案是否包含正确信息。",
+  "cases": [
+    {"id": "d01", "category": "直接问法", "question": "员工出差住宿最多可以报销多少钱？", "expected_docs": ["员工报销制度.md"], "expected_keywords": ["500", "900"]},
+    {"id": "d02", "category": "直接问法", "question": "商品退款需要满足什么条件？", "expected_docs": ["产品退款规则.md"], "expected_keywords": ["7天无理由", "15天"]},
+    {"id": "d03", "category": "直接问法", "question": "经销商提现规则是什么？", "expected_docs": ["经销商管理制度.md", "经销商结算与提现细则.docx"], "expected_keywords": ["1000", "50万", "4次"]},
+    {"id": "d04", "category": "直接问法", "question": "员工请婚假可以休几天？", "expected_docs": ["员工请假制度.md"], "expected_keywords": ["10天"]},
+    {"id": "d05", "category": "直接问法", "question": "维修完成后多久寄回？", "expected_docs": ["商城售后服务规则.pdf"], "expected_keywords": ["3个工作日"]},
+    {"id": "d06", "category": "直接问法", "question": "公司 VPN 怎么连接？", "expected_docs": ["IT服务台常见问题.txt"], "expected_keywords": ["星河零信任客户端"]},
+    {"id": "d07", "category": "直接问法", "question": "陪产假有几天？", "expected_docs": ["员工请假制度.md"], "expected_keywords": ["15天"]},
+    {"id": "d08", "category": "直接问法", "question": "金牌经销商的返利比例是多少？", "expected_docs": ["经销商管理制度.md"], "expected_keywords": ["5%"]},
+
+    {"id": "p01", "category": "换种问法", "question": "去上海出差，普通员工一晚的酒店能报多少？", "expected_docs": ["员工报销制度.md"], "expected_keywords": ["500"]},
+    {"id": "p02", "category": "换种问法", "question": "买完东西第二天降价了，能把差价退给我吗？", "expected_docs": ["商城售后服务规则.pdf"], "expected_keywords": ["价格保护", "7天"]},
+    {"id": "p03", "category": "换种问法", "question": "电脑登录密码隔多久必须改一次？", "expected_docs": ["IT服务台常见问题.txt"], "expected_keywords": ["90天"]},
+    {"id": "p04", "category": "换种问法", "question": "请客户吃饭，每个人最多能花多少钱？", "expected_docs": ["员工报销制度.md"], "expected_keywords": ["300"]},
+    {"id": "p05", "category": "换种问法", "question": "买的水果没坏，能七天无理由退货吗？", "expected_docs": ["产品退款规则.md"], "expected_keywords": ["生鲜"]},
+    {"id": "p06", "category": "换种问法", "question": "报销的钱一般多久打到工资卡上？", "expected_docs": ["员工报销制度.md"], "expected_keywords": ["5个工作日"]},
+    {"id": "p07", "category": "换种问法", "question": "代理商跨区域卖货会被怎么处理？", "expected_docs": ["经销商管理制度.md"], "expected_keywords": ["50%"]},
+
+    {"id": "e01", "category": "精确匹配", "question": "XH-FIN-018 是哪份文件？", "expected_docs": ["经销商结算与提现细则.docx"], "expected_keywords": ["经销商结算与提现细则"]},
+    {"id": "e02", "category": "精确匹配", "question": "400-800-1234 是什么电话？", "expected_docs": ["产品退款规则.md", "商城售后服务规则.pdf"], "expected_keywords": ["400-800-1234"]},
+    {"id": "e03", "category": "精确匹配", "question": "分机 8021 是哪个部门？", "expected_docs": ["员工报销制度.md"], "expected_keywords": ["财务部"]},
+    {"id": "e04", "category": "精确匹配", "question": "「星河商旅」是做什么用的？", "expected_docs": ["员工报销制度.md"], "expected_keywords": ["统一结算"]},
+
+    {"id": "m01", "category": "多轮追问", "history": [
+      {"role": "user", "content": "普通员工出差住宿标准是多少？"},
+      {"role": "assistant", "content": "普通员工（P1-P5）出差住宿标准：一线城市 500 元/晚，二线城市 400 元/晚，三线及其他城市 300 元/晚[1]。"}
+    ], "question": "那总监呢？", "expected_docs": ["员工报销制度.md"], "expected_keywords": ["900"]},
+    {"id": "m02", "category": "多轮追问", "history": [
+      {"role": "user", "content": "经销商提现需要满足什么条件？"},
+      {"role": "assistant", "content": "经销商提现需完成企业实名认证、提现到对公账户、单笔不低于 1,000 元、开具等额增值税专用发票等[1]。"}
+    ], "question": "一个月最多能提几次？", "expected_docs": ["经销商管理制度.md", "经销商结算与提现细则.docx"], "expected_keywords": ["4次"]},
+    {"id": "m03", "category": "多轮追问", "history": [
+      {"role": "user", "content": "员工病假工资怎么算？"},
+      {"role": "assistant", "content": "每年前 5 天病假全额发放，超过部分按基本工资的 80% 发放[1]。"}
+    ], "question": "那事假呢？", "expected_docs": ["员工请假制度.md"], "expected_keywords": ["无薪"]},
+
+    {"id": "r01", "category": "应拒答", "question": "公司明年的上市计划是什么？", "should_refuse": true},
+    {"id": "r02", "category": "应拒答", "question": "今天北京天气怎么样？", "should_refuse": true},
+    {"id": "r03", "category": "应拒答", "question": "CEO 的手机号是多少？", "should_refuse": true},
+    {"id": "r04", "category": "应拒答", "question": "员工食堂几点开饭？", "should_refuse": true}
+  ]
+}

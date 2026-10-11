@@ -12,10 +12,12 @@ import {
   ChevronDown,
   Database,
   FileText,
+  ListOrdered,
   MessageSquareQuote,
   ScanSearch,
   Search,
   SlidersHorizontal,
+  WandSparkles,
 } from "lucide-react";
 import { fetcher, type QueryLog, type RetrievedChunk } from "@/lib/api";
 import { formatDateTime, formatMs, locationLabel } from "@/lib/format";
@@ -46,6 +48,10 @@ export default function RetrievalDetailPage() {
   const threshold = q.params.min_score ?? 0;
   const citeIndex = new Map(q.citations.map((c) => [c.chunk_id, c.index]));
   const t = q.timings ?? {};
+  const isRerank = q.params.gate === "rerank";
+  const gateLabel = isRerank
+    ? `Rerank ≥ ${threshold}${q.params.keep_similarity ? ` 或 相似度 ≥ ${q.params.keep_similarity}` : ""}`
+    : `相似度 ≥ ${threshold}`;
 
   return (
     <PageContainer className="max-w-5xl">
@@ -79,14 +85,26 @@ export default function RetrievalDetailPage() {
         <div className="mb-4 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-800">
           <SlidersHorizontal size={14} /> RAG Pipeline
         </div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-          <Stage icon={Search} title="Query" value={`${q.retrieval_query.length} 字`} sub="原始问题直接检索" />
-          <Stage icon={Binary} title="Embedding" value={formatMs(t.embed_ms)} sub={q.params.embedding} />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           <Stage
-            icon={ScanSearch}
-            title="Vector Search"
-            value={formatMs(t.search_ms)}
-            sub={`Top-${q.params.top_k} · 阈值 ${threshold}`}
+            icon={WandSparkles}
+            title="Query Rewrite"
+            value={t.rewrite_ms !== undefined ? formatMs(t.rewrite_ms) : "跳过"}
+            sub={q.retrieval_query !== q.question ? "追问已改写" : q.params.query_rewrite ? "无需改写" : "未开启"}
+          />
+          <Stage icon={Binary} title="Embedding" value={formatMs(t.embed_ms)} sub={q.params.embedding} />
+          <Stage icon={ScanSearch} title="Vector Search" value={formatMs(t.search_ms)} sub={`候选 Top-${q.params.candidate_k ?? q.params.top_k}`} />
+          <Stage
+            icon={Search}
+            title="BM25"
+            value={t.bm25_ms !== undefined ? formatMs(t.bm25_ms) : "跳过"}
+            sub={q.params.retrieval_mode === "hybrid" ? "RRF 融合" : "仅向量模式"}
+          />
+          <Stage
+            icon={ListOrdered}
+            title="Rerank"
+            value={t.rerank_ms !== undefined ? formatMs(t.rerank_ms) : "跳过"}
+            sub={q.params.reranked ? q.params.reranker ?? "" : "未开启"}
           />
           <Stage
             icon={BrainCircuit}
@@ -103,9 +121,10 @@ export default function RetrievalDetailPage() {
           />
         </div>
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 border-t border-zinc-100 pt-3 text-[12px] text-zinc-500">
-          <span>Retriever：{q.params.retriever ?? "vector"}</span>
+          <span>检索方式：{q.params.retrieval_mode === "hybrid" ? "混合（向量 + BM25）" : "向量"}</span>
+          <span>Top-K：{q.params.top_k}</span>
+          <span>拒答闸门：{gateLabel}</span>
           <span>Chunk Size：{q.params.chunk_size}</span>
-          <span>Overlap：{q.params.chunk_overlap}</span>
           <span>
             送入 LLM：{q.retrieved.filter((r) => r.passed_threshold).length} / {q.retrieved.length} 个切片
           </span>
@@ -117,7 +136,7 @@ export default function RetrievalDetailPage() {
         <h2 className="text-[15px] font-semibold text-zinc-900">Retrieved Chunks</h2>
         <div className="flex items-center gap-3 text-[11.5px] text-zinc-500">
           <span className="flex items-center gap-1">
-            <span className="h-2.5 w-[1.5px] bg-amber-500" /> 相似度阈值 {threshold}
+            <span className="h-2.5 w-[1.5px] bg-amber-500" /> 阈值：{gateLabel}
           </span>
           <span className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-sm bg-brand-500" /> 被回答引用
@@ -131,6 +150,7 @@ export default function RetrievalDetailPage() {
             key={r.chunk_id}
             r={r}
             threshold={threshold}
+            isRerank={isRerank}
             citedAs={citeIndex.get(r.chunk_id)}
             onOpen={() => setSource({ ...r, index: citeIndex.get(r.chunk_id) })}
           />
@@ -205,11 +225,13 @@ function Stage({
 function ChunkCard({
   r,
   threshold,
+  isRerank,
   citedAs,
   onOpen,
 }: {
   r: RetrievedChunk;
   threshold: number;
+  isRerank: boolean;
   citedAs?: number;
   onOpen: () => void;
 }) {
@@ -228,14 +250,34 @@ function ChunkCard({
             <Badge tone="amber">低于阈值 · 未使用</Badge>
           )}
         </div>
-        <ScoreBar score={r.score} threshold={threshold} />
+        {isRerank && r.rerank_score != null ? (
+          <div className="flex items-center gap-1.5" title="Rerank 分数（拒答闸门依据）">
+            <span className="text-[11px] text-zinc-400">Rerank</span>
+            <ScoreBar score={r.rerank_score} threshold={threshold} />
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5" title="余弦相似度">
+            <span className="text-[11px] text-zinc-400">Similarity</span>
+            <ScoreBar score={r.score} threshold={threshold} />
+          </div>
+        )}
         <button onClick={onOpen} className="ml-auto flex min-w-0 items-center gap-1.5 text-[12.5px] text-zinc-600 hover:text-brand-700">
           <FileText size={13} className="shrink-0 text-zinc-400" />
           <span className="truncate font-medium">{r.document_name}</span>
           {locationLabel(r.page, r.section) && <span className="truncate text-zinc-400">· {locationLabel(r.page, r.section)}</span>}
         </button>
       </div>
-      <div className="mt-1.5 font-mono text-[11px] text-zinc-400">chunk_id: {r.chunk_id}</div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-zinc-400">
+        <span>chunk_id: {r.chunk_id}</span>
+        {isRerank && <span>similarity {r.score.toFixed(3)}</span>}
+        <span className={r.vector_rank ? "text-zinc-500" : ""}>向量 {r.vector_rank ? `#${r.vector_rank}` : "—"}</span>
+        {r.bm25_rank !== undefined && (
+          <span className={r.bm25_rank ? "text-zinc-500" : ""}>
+            BM25 {r.bm25_rank ? `#${r.bm25_rank} (${r.bm25_score})` : "—"}
+          </span>
+        )}
+        {r.rrf_score != null && <span>RRF {r.rrf_score.toFixed(4)}</span>}
+      </div>
       <div
         className={clsx(
           "mt-2.5 rounded-lg bg-zinc-50 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-zinc-700",

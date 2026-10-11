@@ -15,9 +15,11 @@ import {
   Loader2,
   MessageSquarePlus,
   ScanSearch,
+  SlidersHorizontal,
   Sparkles,
   Square,
   TriangleAlert,
+  WandSparkles,
 } from "lucide-react";
 import {
   fetcher,
@@ -26,7 +28,9 @@ import {
   type DocumentItem,
   type KnowledgeBase,
   type QueryStatus,
+  type RetrievalSettings,
   type RetrievedChunk,
+  type SystemConfig,
   type Timings,
 } from "@/lib/api";
 import { formatMs, locationLabel } from "@/lib/format";
@@ -38,6 +42,9 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  question?: string;
+  query?: string;
+  gate?: "similarity" | "rerank";
   phase?: "retrieving" | "generating" | "done" | "error";
   retrieved?: RetrievedChunk[];
   usedCount?: number;
@@ -50,11 +57,16 @@ interface Message {
 }
 
 const STORAGE_KEY = "kb-chat-v1";
-const DEMO_QUESTIONS = [
-  "员工出差住宿最多可以报销多少钱？",
-  "商品退款需要满足什么条件？",
-  "经销商提现规则是什么？",
-  "员工请婚假可以休几天？",
+const SETTINGS_KEY = "kb-retrieval-settings-v1";
+// Demo 资料对应的推荐问题：只展示当前知识库里确实有对应文档的问题
+const DEMO_QUESTIONS: { q: string; doc: string }[] = [
+  { q: "员工出差住宿最多可以报销多少钱？", doc: "员工报销制度.md" },
+  { q: "商品退款需要满足什么条件？", doc: "产品退款规则.md" },
+  { q: "经销商提现规则是什么？", doc: "经销商管理制度.md" },
+  { q: "员工请婚假可以休几天？", doc: "员工请假制度.md" },
+  { q: "维修完成后多久寄回？", doc: "商城售后服务规则.pdf" },
+  { q: "提现申请常见的驳回原因有哪些？", doc: "经销商结算与提现细则.docx" },
+  { q: "公司 VPN 怎么连接？", doc: "IT服务台常见问题.txt" },
 ];
 
 function loadConversations(): Record<number, Message[]> {
@@ -87,6 +99,31 @@ function Chat() {
   const [hydrated, setHydrated] = useState(false);
   const [source, setSource] = useState<SourceRef | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const { data: cfg } = useSWR<SystemConfig>("/api/system/config", fetcher);
+  const [rs, setRs] = useState<RetrievalSettings | null>(null);
+  const rerankAvailable = cfg?.providers.rerank.enabled ?? false;
+
+  // 检索策略：优先用本机上次的选择，否则用后端 .env 的默认值
+  useEffect(() => {
+    if (!cfg || rs) return;
+    let saved: RetrievalSettings | null = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null");
+    } catch {}
+    setRs(
+      saved ?? {
+        retrieval_mode: cfg.rag.retrieval_mode === "vector" ? "vector" : "hybrid",
+        rerank: cfg.providers.rerank.enabled,
+        query_rewrite: cfg.rag.query_rewrite,
+      },
+    );
+  }, [cfg, rs]);
+  function updateSettings(next: RetrievalSettings) {
+    setRs(next);
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    } catch {}
+  }
 
   const kbId = useMemo(() => {
     const fromUrl = Number(params.get("kb"));
@@ -124,14 +161,14 @@ function Chat() {
       [kbId]: [
         ...(c[kbId] ?? []),
         { id: uid, role: "user", content: question.trim() },
-        { id: aid, role: "assistant", content: "", phase: "retrieving" },
+        { id: aid, role: "assistant", content: "", phase: "retrieving", question: question.trim() },
       ],
     }));
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
       await streamChat(
-        { kb_id: kbId, question: question.trim(), history },
+        { kb_id: kbId, question: question.trim(), history, ...(rs ?? {}), rerank: (rs?.rerank ?? false) && rerankAvailable },
         (ev) => {
           if (ev.type === "retrieval")
             update(kbId, aid, () => ({
@@ -140,6 +177,8 @@ function Chat() {
               usedCount: ev.used_count,
               queryId: ev.query_id,
               warning: ev.warning,
+              query: ev.query,
+              gate: ev.gate,
             }));
           else if (ev.type === "token") update(kbId, aid, (m) => ({ content: m.content + ev.text }));
           else if (ev.type === "done")
@@ -225,6 +264,8 @@ function Chat() {
             <ChevronRight size={14} className="text-zinc-300" />
             <span className="truncate font-semibold text-zinc-900">{kb?.name ?? "—"}</span>
           </div>
+          <div className="flex items-center gap-1">
+          {rs && <RetrievalMenu value={rs} onChange={updateSettings} rerankAvailable={rerankAvailable} />}
           <Button
             size="sm"
             variant="ghost"
@@ -233,6 +274,7 @@ function Chat() {
           >
             <MessageSquarePlus size={14} /> 新对话
           </Button>
+          </div>
         </div>
 
         <MessageList
@@ -316,13 +358,14 @@ function MessageList({
 
 function Welcome({ kb, onAsk }: { kb?: KnowledgeBase; onAsk: (q: string) => void }) {
   const { data: docs } = useSWR<DocumentItem[]>(kb ? `/api/knowledge-bases/${kb.id}/documents` : null, fetcher);
-  const isDemo = kb?.name.includes("Demo") || docs?.some((d) => d.filename.startsWith("员工报销制度"));
-  const suggestions = isDemo
-    ? DEMO_QUESTIONS
-    : (docs ?? [])
-        .filter((d) => d.status === "ready")
-        .slice(0, 4)
-        .map((d) => `《${d.filename.replace(/\.[^.]+$/, "")}》主要规定了哪些内容？`);
+  const ready = (docs ?? []).filter((d) => d.status === "ready");
+  const names = new Set(ready.map((d) => d.filename));
+  const demo = DEMO_QUESTIONS.filter((x) => names.has(x.doc)).map((x) => x.q);
+  const suggestions = (
+    demo.length
+      ? demo
+      : ready.map((d) => `《${d.filename.replace(/\.[^.]+$/, "")}》主要规定了哪些内容？`)
+  ).slice(0, 4);
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 pb-10">
@@ -362,7 +405,10 @@ function PipelineSteps({ m }: { m: Message }) {
   const total = m.retrieved?.length ?? 0;
   const steps = [
     {
-      label: m.phase === "retrieving" ? "正在检索知识库" : `召回 ${total} 个片段${m.usedCount !== undefined && m.usedCount < total ? `，${m.usedCount} 个高于阈值` : ""}`,
+      label:
+        m.phase === "retrieving"
+          ? "正在检索知识库"
+          : `召回 ${total} 个片段${m.gate === "rerank" ? " · 已重排" : ""}${m.usedCount !== undefined && m.usedCount < total ? `，${m.usedCount} 个通过阈值` : ""}`,
       state: m.phase === "retrieving" ? "active" : m.retrieved ? "done" : m.phase === "error" ? "error" : "idle",
     },
     {
@@ -377,8 +423,17 @@ function PipelineSteps({ m }: { m: Message }) {
       state: m.phase === "generating" ? "active" : m.phase === "done" ? "done" : m.phase === "error" ? "error" : "idle",
     },
   ];
+  const rewritten = m.query && m.question && m.query !== m.question;
   return (
     <div className="mb-2.5 flex flex-wrap items-center gap-1.5 text-[12px]">
+      {rewritten && (
+        <>
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-violet-700" title="多轮追问已改写为独立问题后再检索">
+            <WandSparkles size={11} /> 改写为「{m.query}」
+          </span>
+          <ChevronRight size={12} className="text-zinc-300" />
+        </>
+      )}
       {steps.map((s, i) => (
         <div key={i} className="flex items-center gap-1.5">
           {i > 0 && <ChevronRight size={12} className="text-zinc-300" />}
@@ -570,5 +625,95 @@ function Composer({
         <div className="mt-2 text-center text-[11.5px] text-zinc-400">回答仅基于知识库资料生成，每条结论均可点击角标查看原文出处</div>
       </div>
     </div>
+  );
+}
+
+function RetrievalMenu({
+  value,
+  onChange,
+  rerankAvailable,
+}: {
+  value: RetrievalSettings;
+  onChange: (v: RetrievalSettings) => void;
+  rerankAvailable: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = [value.retrieval_mode === "hybrid" ? "混合检索" : "向量检索", value.rerank && rerankAvailable ? "重排" : null]
+    .filter(Boolean)
+    .join(" + ");
+  return (
+    <div className="relative">
+      <Button size="sm" variant="ghost" onClick={() => setOpen((o) => !o)}>
+        <SlidersHorizontal size={14} /> {label}
+      </Button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1.5 w-72 rounded-xl border border-zinc-200 bg-white p-3 shadow-lg">
+            <div className="mb-2 text-[12px] font-medium text-zinc-500">检索方式</div>
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-0.5">
+              {(["hybrid", "vector"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => onChange({ ...value, retrieval_mode: m })}
+                  className={clsx(
+                    "rounded-md py-1.5 text-[12.5px] transition-colors",
+                    value.retrieval_mode === m ? "bg-white font-medium text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-800",
+                  )}
+                >
+                  {m === "hybrid" ? "混合（向量 + BM25）" : "仅向量"}
+                </button>
+              ))}
+            </div>
+            <Toggle
+              label="Rerank 重排"
+              hint={rerankAvailable ? "对召回结果交叉打分后再取 Top-K" : "后端未配置 RERANK_PROVIDER"}
+              checked={value.rerank && rerankAvailable}
+              disabled={!rerankAvailable}
+              onChange={(v) => onChange({ ...value, rerank: v })}
+            />
+            <Toggle
+              label="追问改写"
+              hint="多轮对话时把追问补全成独立问题再检索"
+              checked={value.query_rewrite}
+              onChange={(v) => onChange({ ...value, query_rewrite: v })}
+            />
+            <Link href="/evals" className="mt-2 block border-t border-zinc-100 pt-2.5 text-[12px] text-brand-600 hover:underline">
+              查看不同策略的评测对比 →
+            </Link>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Toggle({
+  label,
+  hint,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <div>
+        <div className="text-[13px] text-zinc-800">{label}</div>
+        <div className="text-[11.5px] text-zinc-400">{hint}</div>
+      </div>
+      <span className={clsx("relative h-5 w-9 shrink-0 rounded-full transition-colors", checked ? "bg-brand-600" : "bg-zinc-200")}>
+        <span className={clsx("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", checked ? "left-[18px]" : "left-0.5")} />
+      </span>
+    </button>
   );
 }

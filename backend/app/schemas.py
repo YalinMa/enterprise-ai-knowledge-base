@@ -85,6 +85,10 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     history: list[ChatMessage] = []
     top_k: int | None = Field(default=None, ge=1, le=20)
+    # 检索策略覆盖（不填则用 .env 默认值），问答页的「检索设置」会传这几个字段
+    retrieval_mode: str | None = Field(default=None, pattern="^(vector|hybrid)$")
+    rerank: bool | None = None
+    query_rewrite: bool | None = None
     stream: bool = True
 
 
@@ -95,6 +99,7 @@ class QueryLogSummary(ORM):
     question: str
     status: str
     answer: str
+    source: str = "chat"
     created_at: UTCDateTime
     timings: dict
     citations: list

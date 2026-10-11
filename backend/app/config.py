@@ -46,12 +46,23 @@ class Settings(BaseSettings):
     embedding_dimensions: int | None = None
     local_embedding_model: str = "BAAI/bge-small-zh-v1.5"
 
+    # ---- Rerank ----
+    rerank_provider: str = "none"       # qwen / none
+    rerank_api_key: str = ""            # 不填时，若 Embedding 也用 qwen 则复用其 Key
+    rerank_model: str = "gte-rerank-v2"
+    rerank_min_score: float = 0.15      # 开启 Rerank 后，拒答闸门改用重排分数（基于评测集标定）
+    rerank_keep_similarity: float = 0.55  # 重排分数偏低但余弦相似度很高的切片也放行（口语化问法）
+
     # ---- RAG 参数 ----
     chunk_size: int = 500               # 字符数；中文约 500~700 tokens
     chunk_overlap: int = 80             # 约 16%
     top_k: int = 5
     min_score: float | None = None      # 相似度阈值；不填则按 embedding 提供方取经验默认值
-    history_turns: int = 3              # 带入 LLM 的历史轮数（检索只用当前问题）
+    history_turns: int = 3              # 带入 LLM 的历史轮数
+    retrieval_mode: str = "hybrid"      # vector / hybrid（向量 + BM25，RRF 融合）
+    candidate_k: int = 20               # 每路召回的候选数，融合 / 重排后再截到 top_k
+    rrf_k: int = 60                     # RRF 平滑常数
+    query_rewrite: bool = True          # 多轮对话时把追问改写成独立问题再检索
 
     # ---- 存储 ----
     data_dir: Path = BACKEND_DIR / "data"

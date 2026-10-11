@@ -99,7 +99,28 @@ class QueryLog(Base):
     timings: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(20), default="ok")  # ok / no_context / error
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="chat")  # chat / eval
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvalRun(Base):
+    """一次 RAG 评测：在某个知识库上，用某组检索配置跑完整个评测集。"""
+    __tablename__ = "eval_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kb_id: Mapped[int] = mapped_column(Integer, index=True)
+    kb_name: Mapped[str] = mapped_column(String(100))
+    dataset: Mapped[str] = mapped_column(String(100))
+    mode: Mapped[str] = mapped_column(String(20))           # retrieval / full
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running / done / failed
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    results: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 _settings = get_settings()
@@ -117,8 +138,20 @@ def _sqlite_pragmas(dbapi_conn, _):
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
+# 轻量迁移：create_all 不会给已存在的表加列，这里补上新版本新增的列
+_ADDED_COLUMNS = {
+    "query_logs": {"source": "VARCHAR(20) NOT NULL DEFAULT 'chat'"},
+}
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        for table, cols in _ADDED_COLUMNS.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            for name, ddl in cols.items():
+                if name not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
 
 def get_db():

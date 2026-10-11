@@ -1,4 +1,4 @@
-"""RAG 核心环节的单元测试 + 一个离线端到端测试（mock LLM / mock Embedding，不需要任何 Key）。
+"""RAG 核心环节的单元测试 + 离线端到端测试（mock LLM / mock Embedding，不需要任何 Key）。
 
     .venv/bin/pytest -q
 """
@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-os.environ.update(LLM_PROVIDER="mock", EMBEDDING_PROVIDER="mock", DATA_DIR=tempfile.mkdtemp())
+os.environ.update(LLM_PROVIDER="mock", EMBEDDING_PROVIDER="mock", RERANK_PROVIDER="none",
+                  DATA_DIR=tempfile.mkdtemp())
 
 from app.rag.chunking import chunk_document  # noqa: E402
 from app.rag.citations import resolve_citations  # noqa: E402
@@ -119,3 +120,81 @@ def test_end_to_end_offline():
         assert c.delete(f"/api/documents/{pdf['id']}").status_code == 204
         r = c.post("/api/chat", json={"kb_id": kb["id"], "question": "维修多久寄回？", "stream": False}).json()
         assert all(x["document_id"] != pdf["id"] for x in r["retrieved"])
+
+
+# ---------------- v0.2：混合检索 / 重排闸门 / 评测 ----------------
+
+def test_bm25_tokenize_keeps_codes_and_drops_stopwords():
+    from app.rag.bm25 import tokenize
+    toks = tokenize("文件编号 XH-FIN-018 是什么？客服热线400-800-1234")
+    assert {"xh", "fin", "018", "400", "1234", "客服热线"} <= set(toks)
+    assert "什么" not in toks and "-" not in toks
+
+
+class FakeReranker:
+    provider, model, signature = "fake", "fake", "fake:fake"
+
+    def __init__(self, scores_by_doc):
+        self.scores_by_doc = scores_by_doc
+
+    def score(self, query, documents):
+        return [next((v for k, v in self.scores_by_doc.items() if k in d), 0.01) for d in documents]
+
+
+def _kb_with(client, names):
+    kb = client.post("/api/knowledge-bases", json={"name": "h", "description": "", "icon": "book"}).json()
+    files = [("files", (n, (DEMO / n).read_bytes())) for n in names]
+    assert client.post(f"/api/knowledge-bases/{kb['id']}/documents", files=files).status_code == 201
+    return kb["id"]
+
+
+def test_hybrid_retrieval_and_rerank_gate():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.providers import get_embedder
+    from app.rag.retriever import RetrievalOptions, Retriever
+
+    with TestClient(app) as c:
+        kb_id = _kb_with(c, ["经销商结算与提现细则.docx", "员工报销制度.md", "员工请假制度.md"])
+        r = Retriever(get_embedder())
+
+        hybrid = r.retrieve(kb_id, "XH-FIN-018", RetrievalOptions(mode="hybrid", min_score=0.0))
+        top = hybrid.chunks[0]
+        assert top.document_name == "经销商结算与提现细则.docx" and top.bm25_rank == 1
+        assert all(ch.rrf_score is not None for ch in hybrid.chunks)
+
+        vector = r.retrieve(kb_id, "XH-FIN-018", RetrievalOptions(mode="vector", min_score=0.0))
+        assert all(ch.bm25_rank is None for ch in vector.chunks)
+
+        # 重排：按重排分数排序；闸门 = 重排分数达标 或 相似度足够高
+        rr = Retriever(get_embedder(), FakeReranker({"XH-FIN-018": 0.9}))
+        res = rr.retrieve(kb_id, "XH-FIN-018", RetrievalOptions(mode="hybrid", rerank_min_score=0.15,
+                                                                 keep_similarity=0.99))
+        assert res.gate == "rerank" and res.chunks[0].rerank_score == 0.9
+        assert [ch.passed_threshold for ch in res.chunks] == [True] + [False] * (len(res.chunks) - 1)
+        res = rr.retrieve(kb_id, "XH-FIN-018", RetrievalOptions(mode="hybrid", rerank_min_score=0.15,
+                                                                 keep_similarity=0.0))
+        assert all(ch.passed_threshold for ch in res.chunks)  # 相似度信号放行全部
+
+
+def test_eval_case_and_metrics():
+    from fastapi.testclient import TestClient
+    from app.eval.runner import compute_metrics, load_dataset, run_case
+    from app.main import app
+    from app.rag.pipeline import RAGOptions
+
+    with TestClient(app) as c:
+        kb_id = _kb_with(c, ["员工报销制度.md"])
+        opt = RAGOptions.from_settings(retrieval_mode="hybrid", rerank=False, query_rewrite=False)
+        ok = run_case(kb_id, {"id": "a", "category": "直接问法", "question": "出差住宿标准",
+                              "expected_docs": ["员工报销制度.md"], "expected_keywords": ["500"]}, opt, "retrieval")
+        assert ok["hit_rank"] == 1 and ok["context_recall"] == 1 and ok["passed"]
+        miss = run_case(kb_id, {"id": "b", "category": "直接问法", "question": "出差住宿标准",
+                                "expected_docs": ["不存在.md"], "expected_keywords": []}, opt, "retrieval")
+        assert miss["hit_rank"] is None and not miss["passed"]
+
+    m = compute_metrics([ok, miss, {**ok, "should_refuse": True, "refused": True, "passed": True,
+                                    "category": "应拒答"}], "retrieval")
+    assert m["hit_rate"] == 0.5 and m["mrr"] == 0.5 and m["refusal_accuracy"] == 1.0
+    assert m["by_category"]["直接问法"] == {"total": 2, "passed": 1}
+    assert len(load_dataset("demo")["cases"]) >= 20

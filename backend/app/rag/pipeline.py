@@ -9,15 +9,17 @@ import logging
 import re
 import time
 from collections.abc import Iterator
+from dataclasses import asdict, dataclass
 
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import get_settings
 from app.db import KnowledgeBase, QueryLog, SessionLocal
-from app.providers import get_embedder, get_llm
+from app.providers import get_embedder, get_llm, get_reranker
 from app.rag.citations import resolve_citations
 from app.rag.prompts import NOT_FOUND, build_messages
-from app.rag.retriever import VectorRetriever
+from app.rag.query_rewrite import rewrite_query
+from app.rag.retriever import RetrievalOptions, RetrievalResult, Retriever
 
 log = logging.getLogger("rag")
 
@@ -26,11 +28,52 @@ def _ms(t: float) -> int:
     return round((time.perf_counter() - t) * 1000)
 
 
-def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
-                  top_k: int | None = None) -> Iterator[dict]:
+@dataclass
+class RAGOptions:
+    """单次问答的策略参数。默认值来自 .env，问答页 / 评测可以按请求覆盖，便于现场对比。"""
+    top_k: int
+    retrieval_mode: str
+    rerank: bool
+    query_rewrite: bool
+
+    @classmethod
+    def from_settings(cls, **overrides) -> "RAGOptions":
+        s = get_settings()
+        base = cls(top_k=s.top_k, retrieval_mode=s.retrieval_mode,
+                   rerank=s.rerank_provider != "none", query_rewrite=s.query_rewrite)
+        for k, v in overrides.items():
+            if v is not None and hasattr(base, k):
+                setattr(base, k, v)
+        return base
+
+
+def retrieve(kb_id: int, question: str, history: list[dict], opt: RAGOptions
+             ) -> tuple[str, RetrievalResult, dict]:
+    """Query Rewrite + 检索。返回（实际检索用的 query, 检索结果, 耗时）。评测的「仅检索」模式也复用它。"""
     settings, embedder, llm = get_settings(), get_embedder(), get_llm()
-    top_k = top_k or settings.top_k
+    timings: dict = {}
+    query = question
+    if opt.query_rewrite and history:
+        t = time.perf_counter()
+        try:
+            query = rewrite_query(llm, question, history)
+        except Exception:  # noqa: BLE001 —— 改写失败不影响问答，退回原问题
+            log.exception("query rewrite failed")
+        timings["rewrite_ms"] = _ms(t)
     min_score = settings.min_score if settings.min_score is not None else embedder.default_min_score
+    ropt = RetrievalOptions(top_k=opt.top_k, mode=opt.retrieval_mode, rerank=opt.rerank,
+                            candidate_k=settings.candidate_k, rrf_k=settings.rrf_k,
+                            min_score=min_score, rerank_min_score=settings.rerank_min_score,
+                            keep_similarity=settings.rerank_keep_similarity)
+    result = Retriever(embedder, get_reranker()).retrieve(kb_id, query, ropt)
+    timings.update(result.timings)
+    return query, result, timings
+
+
+def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
+                  options: RAGOptions | None = None, source: str = "chat") -> Iterator[dict]:
+    settings, embedder, llm, reranker = get_settings(), get_embedder(), get_llm(), get_reranker()
+    opt = options or RAGOptions.from_settings()
     history = (history or [])[-settings.history_turns * 2:]
     t_start = time.perf_counter()
 
@@ -41,13 +84,15 @@ def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
             yield {"type": "error", "message": "知识库不存在"}
             return
         qlog = QueryLog(kb_id=kb_id, kb_name=kb.name, question=question, retrieval_query=question,
-                        status="running", params={
-                            "top_k": top_k, "min_score": min_score,
+                        status="running", source=source, params={
+                            **asdict(opt),
                             "embedding": embedder.signature,
                             "llm": f"{llm.provider}:{llm.model}",
+                            "reranker": reranker.signature if reranker else None,
                             "chunk_size": settings.chunk_size,
                             "chunk_overlap": settings.chunk_overlap,
-                            "retriever": "vector",
+                            "candidate_k": settings.candidate_k,
+                            "retriever": opt.retrieval_mode,
                         })
         db.add(qlog)
         db.commit()
@@ -57,9 +102,9 @@ def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
             warning = (f"该知识库的向量由 {kb.embedding_signature} 生成，当前 Embedding 为 "
                        f"{embedder.signature}，请在知识库详情页「全部重新解析」。")
 
-        # ---- 检索 ----
+        # ---- Query Rewrite + 检索 ----
         try:
-            result = VectorRetriever(embedder, min_score).retrieve(kb_id, question, top_k)
+            query, result, timings = retrieve(kb_id, question, history, opt)
         except Exception as e:  # noqa: BLE001
             log.exception("retrieval failed")
             msg = warning or f"检索失败：{type(e).__name__}: {e}"
@@ -68,12 +113,15 @@ def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
             yield {"type": "error", "message": msg, "query_id": qlog.id}
             return
         used = [c for c in result.chunks if c.passed_threshold]
-        timings = dict(result.timings)
+        qlog.retrieval_query = query
         qlog.retrieved = [c.to_dict() for c in result.chunks]
+        qlog.params = {**qlog.params, "gate": result.gate, "min_score": result.threshold,
+                       "keep_similarity": settings.rerank_keep_similarity if result.reranked else None,
+                       "reranked": result.reranked, "candidates": result.candidates}
         db.commit()
-        yield {"type": "retrieval", "query_id": qlog.id,
-               "chunks": [c.to_dict() for c in result.chunks],
-               "used_count": len(used), "min_score": min_score, "warning": warning}
+        yield {"type": "retrieval", "query_id": qlog.id, "query": query,
+               "chunks": [c.to_dict() for c in result.chunks], "used_count": len(used),
+               "min_score": result.threshold, "gate": result.gate, "warning": warning}
 
         # ---- 拒答闸门：没有足够相关的资料就不调用 LLM，从源头避免编造 ----
         if not used:

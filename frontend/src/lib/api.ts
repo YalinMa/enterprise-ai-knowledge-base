@@ -66,6 +66,11 @@ export interface RetrievedChunk {
   score: number;
   passed_threshold: boolean;
   cited?: boolean;
+  vector_rank?: number | null;
+  bm25_rank?: number | null;
+  bm25_score?: number | null;
+  rrf_score?: number | null;
+  rerank_score?: number | null;
 }
 
 export interface Citation {
@@ -81,6 +86,9 @@ export interface Citation {
 }
 
 export interface Timings {
+  rewrite_ms?: number;
+  bm25_ms?: number;
+  rerank_ms?: number;
   embed_ms?: number;
   search_ms?: number;
   llm_ms?: number;
@@ -97,6 +105,7 @@ export interface QueryLogSummary {
   question: string;
   status: QueryStatus;
   answer: string;
+  source?: string;
   created_at: string;
   timings: Timings;
   citations: Citation[];
@@ -109,6 +118,15 @@ export interface QueryLog extends QueryLogSummary {
   params: {
     top_k?: number;
     min_score?: number;
+    retrieval_mode?: string;
+    rerank?: boolean;
+    query_rewrite?: boolean;
+    reranked?: boolean;
+    reranker?: string | null;
+    gate?: "similarity" | "rerank";
+    keep_similarity?: number | null;
+    candidates?: number;
+    candidate_k?: number;
     embedding?: string;
     llm?: string;
     chunk_size?: number;
@@ -130,19 +148,93 @@ export interface SystemConfig {
       configured_provider: string;
       signature: string;
     };
+    rerank: { provider: string; model: string | null; enabled: boolean; configured_provider: string };
   };
   rag: {
     chunk_size: number;
     chunk_overlap: number;
     top_k: number;
     min_score: number;
+    rerank_min_score: number;
+    rerank_keep_similarity: number;
     history_turns: number;
-    retriever: string;
+    retrieval_mode: string;
+    candidate_k: number;
+    rrf_k: number;
+    query_rewrite: boolean;
     vector_db: string;
+    keyword_index: string;
     metadata_db: string;
   };
   supported_types: string[];
   system_prompt: string;
+}
+
+export interface RetrievalSettings {
+  retrieval_mode: "vector" | "hybrid";
+  rerank: boolean;
+  query_rewrite: boolean;
+}
+
+export interface EvalMetrics {
+  pass_rate: number | null;
+  hit_rate: number | null;
+  mrr: number | null;
+  context_recall: number | null;
+  refusal_accuracy: number | null;
+  false_refusal_rate: number | null;
+  refusal_recall: number | null;
+  answer_accuracy?: number | null;
+  citation_hit_rate?: number | null;
+  latency_avg_ms: number | null;
+  latency_p95_ms: number | null;
+  by_category: Record<string, { total: number; passed: number }>;
+}
+
+export interface EvalCaseResult {
+  id: string;
+  category: string;
+  question: string;
+  should_refuse: boolean;
+  expected_docs: string[];
+  retrieval_query?: string;
+  query_id?: number | null;
+  refused: boolean;
+  status?: string | null;
+  hit_rank: number | null;
+  context_recall: number;
+  answer?: string;
+  answer_recall?: number;
+  citation_hit?: boolean | null;
+  top_chunks?: { document_name: string; score: number; rerank_score: number | null; passed: boolean }[];
+  total_ms?: number | null;
+  passed: boolean;
+  reason: string | null;
+}
+
+export interface EvalRun {
+  id: number;
+  kb_id: number;
+  kb_name: string;
+  dataset: string;
+  mode: "retrieval" | "full";
+  config: RetrievalSettings & { top_k: number; embedding: string; llm: string; reranker: string | null; chunk_size: number };
+  status: "running" | "done" | "failed";
+  progress: number;
+  total: number;
+  metrics: Partial<EvalMetrics>;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+  results?: EvalCaseResult[];
+}
+
+export interface EvalDataset {
+  id: string;
+  name: string;
+  description: string;
+  count: number;
+  categories: Record<string, number>;
 }
 
 // ---------------- 请求封装 ----------------
@@ -197,6 +289,9 @@ export const api = {
     return new File([await res.blob()], name);
   },
   seedDemo: () => request<{ kb_id: number; added: string[] }>("/api/demo/seed", json("POST")),
+  createEval: (body: { kb_id: number; dataset: string; mode: string } & RetrievalSettings & { top_k: number }) =>
+    request<EvalRun>("/api/evals", json("POST", body)),
+  deleteEval: (id: number) => request<void>(`/api/evals/${id}`, { method: "DELETE" }),
   testSystem: () =>
     request<{
       embedding: { ok: boolean; dim?: number; error?: string };
@@ -210,7 +305,16 @@ export const fileUrl = (docId: number, page?: number | null) =>
 // ---------------- 流式问答（SSE over fetch） ----------------
 
 export type ChatEvent =
-  | { type: "retrieval"; query_id: number; chunks: RetrievedChunk[]; used_count: number; min_score: number; warning: string | null }
+  | {
+      type: "retrieval";
+      query_id: number;
+      query: string;
+      chunks: RetrievedChunk[];
+      used_count: number;
+      min_score: number;
+      gate: "similarity" | "rerank";
+      warning: string | null;
+    }
   | { type: "token"; text: string }
   | {
       type: "done";
@@ -224,7 +328,7 @@ export type ChatEvent =
   | { type: "error"; message: string; query_id?: number };
 
 export async function streamChat(
-  body: { kb_id: number; question: string; history: { role: string; content: string }[] },
+  body: { kb_id: number; question: string; history: { role: string; content: string }[] } & Partial<RetrievalSettings>,
   onEvent: (e: ChatEvent) => void,
   signal?: AbortSignal,
 ) {

@@ -7,10 +7,12 @@ from app.config import PROVIDER_PRESETS, get_settings
 from app.providers.embedding import (EmbeddingProvider, LocalEmbedding, MockEmbedding,
                                      OpenAICompatEmbedding)
 from app.providers.llm import LLMProvider, MockLLM, OpenAICompatLLM
+from app.providers.rerank import QwenReranker, Reranker
 
 log = logging.getLogger("providers")
 
-__all__ = ["get_llm", "get_embedder", "describe_providers", "LLMProvider", "EmbeddingProvider"]
+__all__ = ["get_llm", "get_embedder", "get_reranker", "describe_providers", "LLMProvider",
+           "EmbeddingProvider", "Reranker"]
 
 
 def _resolve(provider: str, base_url: str, model: str, kind: str) -> tuple[str, str]:
@@ -55,12 +57,24 @@ def get_embedder() -> EmbeddingProvider:
     return OpenAICompatEmbedding(p, key, base_url, model, s.embedding_dimensions, batch)
 
 
+@lru_cache
+def get_reranker() -> Reranker | None:
+    """未配置时返回 None，检索流程自动跳过重排。"""
+    s = get_settings()
+    if s.rerank_provider == "qwen":
+        key = s.rerank_api_key or (s.embedding_api_key if s.embedding_provider == "qwen" else "")
+        return QwenReranker(key, s.rerank_model) if key else None
+    return None
+
+
 def describe_providers() -> dict:
-    s, llm, emb = get_settings(), get_llm(), get_embedder()
+    s, llm, emb, rr = get_settings(), get_llm(), get_embedder(), get_reranker()
     return {
         "llm": {"provider": llm.provider, "model": llm.model, "is_mock": llm.is_mock,
                 "configured_provider": s.llm_provider},
         "embedding": {"provider": emb.provider, "model": emb.model, "is_mock": emb.is_mock,
                       "configured_provider": s.embedding_provider,
                       "signature": emb.signature},
+        "rerank": {"provider": rr.provider if rr else "none", "model": rr.model if rr else None,
+                   "enabled": rr is not None, "configured_provider": s.rerank_provider},
     }

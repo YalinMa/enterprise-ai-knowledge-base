@@ -14,7 +14,7 @@ from app.db import Document, KnowledgeBase, QueryLog, get_db
 from app.providers import describe_providers, get_embedder, get_llm
 from app.rag.ingest import ingest_document
 from app.rag.parsers import SUPPORTED_TYPES, detect_type
-from app.rag.pipeline import answer_stream
+from app.rag.pipeline import RAGOptions, answer_stream
 from app.rag.prompts import SYSTEM_PROMPT
 from app.schemas import ChatRequest, QueryLogOut, QueryLogSummary
 
@@ -28,8 +28,10 @@ DEMO_KB_NAME = "Demo 企业知识库"
 def chat(body: ChatRequest, db: Session = Depends(get_db)):
     if db.get(KnowledgeBase, body.kb_id) is None:
         raise HTTPException(404, "知识库不存在")
+    opt = RAGOptions.from_settings(top_k=body.top_k, retrieval_mode=body.retrieval_mode,
+                                   rerank=body.rerank, query_rewrite=body.query_rewrite)
     events = answer_stream(body.kb_id, body.question.strip(),
-                           [m.model_dump() for m in body.history], body.top_k)
+                           [m.model_dump() for m in body.history], opt)
     if not body.stream:
         result = {}
         for ev in events:
@@ -48,10 +50,13 @@ def chat(body: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/retrievals", response_model=list[QueryLogSummary])
-def list_retrievals(kb_id: int | None = None, limit: int = 100, db: Session = Depends(get_db)):
+def list_retrievals(kb_id: int | None = None, source: str = "chat", limit: int = 100,
+                    db: Session = Depends(get_db)):
     q = select(QueryLog).order_by(QueryLog.id.desc()).limit(min(limit, 500))
     if kb_id:
         q = q.where(QueryLog.kb_id == kb_id)
+    if source != "all":
+        q = q.where(QueryLog.source == source)
     return db.scalars(q).all()
 
 
@@ -70,8 +75,12 @@ def system_config():
         "providers": describe_providers(),
         "rag": {"chunk_size": s.chunk_size, "chunk_overlap": s.chunk_overlap, "top_k": s.top_k,
                 "min_score": s.min_score if s.min_score is not None else emb.default_min_score,
-                "history_turns": s.history_turns, "retriever": "vector (cosine)",
-                "vector_db": "Chroma (local persistent)", "metadata_db": "SQLite"},
+                "rerank_min_score": s.rerank_min_score,
+                "rerank_keep_similarity": s.rerank_keep_similarity,
+                "history_turns": s.history_turns, "retrieval_mode": s.retrieval_mode,
+                "candidate_k": s.candidate_k, "rrf_k": s.rrf_k, "query_rewrite": s.query_rewrite,
+                "vector_db": "Chroma (local persistent)", "keyword_index": "BM25 (jieba)",
+                "metadata_db": "SQLite"},
         "supported_types": SUPPORTED_TYPES,
         "system_prompt": SYSTEM_PROMPT,
     }

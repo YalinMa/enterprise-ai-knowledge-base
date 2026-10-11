@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import useSWR from "swr";
-import { BookOpen, History, MessageSquareText, Settings, Sparkles } from "lucide-react";
+import { BookOpen, FlaskConical, History, MessageSquareText, Settings, Sparkles } from "lucide-react";
 import clsx from "clsx";
 import { fetcher, type SystemConfig } from "@/lib/api";
 
@@ -11,6 +11,7 @@ const NAV = [
   { href: "/", label: "知识库", icon: BookOpen, match: (p: string) => p === "/" || p.startsWith("/kb") },
   { href: "/chat", label: "AI 问答", icon: MessageSquareText, match: (p: string) => p.startsWith("/chat") },
   { href: "/retrievals", label: "检索记录", icon: History, match: (p: string) => p.startsWith("/retrievals") },
+  { href: "/evals", label: "RAG 评测", icon: FlaskConical, match: (p: string) => p.startsWith("/evals") },
   { href: "/settings", label: "设置", icon: Settings, match: (p: string) => p.startsWith("/settings") },
 ];
 

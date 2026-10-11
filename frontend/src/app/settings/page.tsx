@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { BrainCircuit, Binary, CheckCircle2, Database, PlugZap, SlidersHorizontal, XCircle } from "lucide-react";
+import { BrainCircuit, Binary, ListOrdered, CheckCircle2, Database, PlugZap, SlidersHorizontal, XCircle } from "lucide-react";
 import { api, API_BASE, fetcher, type SystemConfig } from "@/lib/api";
 import { Badge, Button, Card, ErrorBanner, PageContainer, PageHeader, Spinner } from "@/components/ui";
 
@@ -47,7 +47,7 @@ export default function SettingsPage() {
         )
       ) : (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <ProviderCard
               icon={BrainCircuit}
               title="LLM"
@@ -71,6 +71,15 @@ export default function SettingsPage() {
                 }
               }
             />
+            <ProviderCard
+              icon={ListOrdered}
+              title="Rerank"
+              envKey="RERANK_PROVIDER"
+              provider={cfg.providers.rerank.provider}
+              model={cfg.providers.rerank.model ?? "—"}
+              mock={false}
+              disabled={!cfg.providers.rerank.enabled}
+            />
           </div>
 
           <Card className="p-5">
@@ -81,9 +90,16 @@ export default function SettingsPage() {
               <Item k="Chunk Size" v={`${cfg.rag.chunk_size} 字符`} env="CHUNK_SIZE" />
               <Item k="Chunk Overlap" v={`${cfg.rag.chunk_overlap} 字符`} env="CHUNK_OVERLAP" />
               <Item k="Top-K" v={cfg.rag.top_k} env="TOP_K" />
-              <Item k="相似度阈值" v={cfg.rag.min_score} env="MIN_SCORE" />
+              <Item k="检索方式" v={cfg.rag.retrieval_mode === "hybrid" ? "混合（向量 + BM25 · RRF）" : "向量"} env="RETRIEVAL_MODE" />
+              <Item k="候选数 / RRF k" v={`${cfg.rag.candidate_k} / ${cfg.rag.rrf_k}`} env="CANDIDATE_K" />
+              <Item k="追问改写" v={cfg.rag.query_rewrite ? "开启" : "关闭"} env="QUERY_REWRITE" />
+              <Item k="相似度阈值（未重排）" v={cfg.rag.min_score} env="MIN_SCORE" />
+              <Item
+                k="重排阈值"
+                v={`Rerank ≥ ${cfg.rag.rerank_min_score} 或 相似度 ≥ ${cfg.rag.rerank_keep_similarity}`}
+                env="RERANK_MIN_SCORE"
+              />
               <Item k="历史轮数" v={cfg.rag.history_turns} env="HISTORY_TURNS" />
-              <Item k="检索方式" v={cfg.rag.retriever} />
             </div>
           </Card>
 
@@ -93,6 +109,7 @@ export default function SettingsPage() {
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-[13px] md:grid-cols-3">
               <Item k="向量数据库" v={cfg.rag.vector_db} />
+              <Item k="关键词索引" v={cfg.rag.keyword_index} />
               <Item k="元数据库" v={cfg.rag.metadata_db} />
               <Item k="后端地址" v={API_BASE} />
               <Item k="支持格式" v={cfg.supported_types.join(" / ")} />
@@ -118,6 +135,7 @@ function ProviderCard({
   provider,
   model,
   mock,
+  disabled,
   test,
 }: {
   icon: typeof Database;
@@ -126,6 +144,7 @@ function ProviderCard({
   provider: string;
   model: string;
   mock: boolean;
+  disabled?: boolean;
   test?: { ok: boolean; text: string };
 }) {
   return (
@@ -134,7 +153,7 @@ function ProviderCard({
         <div className="flex items-center gap-1.5 text-[13.5px] font-semibold">
           <Icon size={15} /> {title}
         </div>
-        {mock ? <Badge tone="amber">Mock 模式</Badge> : <Badge tone="green">已配置</Badge>}
+        {disabled ? <Badge>未开启</Badge> : mock ? <Badge tone="amber">Mock 模式</Badge> : <Badge tone="green">已配置</Badge>}
       </div>
       <div className="space-y-2.5 text-[13px]">
         <Item k="Provider" v={provider} env={envKey} />

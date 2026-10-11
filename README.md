@@ -2,15 +2,21 @@
 
 > 上传企业资料 → 自动构建知识库 → 员工用自然语言提问 → AI 基于原文作答，**每一条结论都能点开看到出自哪份文件、哪一页、哪一段**。
 
-一个可本地运行的 RAG（Retrieval-Augmented Generation）企业知识库 MVP，覆盖「资料入库 → 检索 → 生成 → 引用溯源 → 检索过程可视化」的完整闭环。
+一个可本地运行的 RAG（Retrieval-Augmented Generation）企业知识库，覆盖「资料入库 → 检索 → 生成 → 引用溯源 → 检索过程可视化 → 效果评测」的完整闭环。
+
+| 版本 | 内容 |
+|---|---|
+| v0.1 | RAG MVP：多格式解析、按章节切片、向量检索、拒答闸门、流式问答、引用校验、检索详情 |
+| **v0.2** | **检索质量 + 评测**：混合检索（向量 + BM25，RRF 融合）、Rerank 重排、多轮追问改写、RAG 评测体系与评测页面。评测通过率 **81% → 100%**（[详见第 9 节](#9-rag-评测)） |
 
 | 页面 | 能做什么 |
 |---|---|
 | **知识库首页** | 知识库 / 文档 / 切片数量统计，按部门管理知识库，一键导入 Demo 数据 |
 | **知识库详情** | 拖拽上传 PDF / DOCX / Markdown / TXT，实时看到「解析 → 向量化 → 完成」状态，查看每个文档的切片，重新解析，删除 |
 | **AI 问答** | ChatGPT 式流式对话，左侧选知识库；回答中的 `[1]` 角标和下方来源卡片都可点开查看原文，PDF 可直接跳到引用页 |
-| **检索详情** | 一次问答的完整 RAG 轨迹：各阶段耗时、Top-K 切片的相似度与阈值、哪些被引用、实际发给大模型的 Prompt |
-| **设置** | 当前 LLM / Embedding / RAG 参数，一键连通性测试 |
+| **检索详情** | 一次问答的完整 RAG 轨迹：追问改写 → Embedding → 向量检索 → BM25 → 重排 → 生成各阶段耗时；每个切片的相似度、向量 / BM25 排名、RRF 分数、重排分数、是否被引用；实际发给大模型的 Prompt |
+| **RAG 评测** | 26 道带标准答案的评测题，一键评测 Hit@K、MRR、Context Recall、拒答准确率、答案准确率、引用命中率；多组检索策略横向对比，逐题查看失败原因 |
+| **设置** | 当前 LLM / Embedding / Rerank / RAG 参数，一键连通性测试 |
 
 ---
 
@@ -38,7 +44,9 @@
 | 找不到 | 自然语言提问，语义检索 | Embedding + 向量检索，问法和原文用词不同也能召回 |
 | 定位难 | 引用精确到文件 / 页码 / 章节 | 切片保留 `document_id / page / section / chunk_id`，点击即看原文 |
 | 不敢用 | 防编造三道闸 | ① 相似度阈值：无相关资料时**不调用大模型**，直接回答「没有找到」<br>② Prompt 约束：只能依据给定资料，必须标注 `[编号]`<br>③ 引用校验：后端校验每个编号，删除不存在的引用，并对齐到真实切片 |
-| 不可调试 | 检索过程可视化 | 每次问答落库：召回切片、相似度、阈值、是否被引用、完整 Prompt、各阶段耗时 |
+| 问法五花八门 | 混合检索 + 追问改写 | 向量检索理解语义，BM25 精确匹配编号 / 电话 / 专有名词，Reranker 精排；「那总监呢？」先结合上下文改写成完整问题 |
+| 不可调试 | 检索过程可视化 | 每次问答落库：召回切片、各路排名与分数、阈值、是否被引用、完整 Prompt、各阶段耗时 |
+| 不知道好不好 | 量化评测 | 评测集 + 自动评分，每次改动检索策略都能用数据说明效果，而不是凭感觉 |
 | 多部门 | 按部门划分知识库 | 产品 / 技术 / 运营 / 人事行政知识库；数据模型已预留部门与权限字段 |
 
 **核心用户流程**
@@ -62,13 +70,18 @@ flowchart TB
 
     subgraph Backend[后端]
         API --> Pipeline[RAG Pipeline]
-        Pipeline --> Retriever[Retriever<br/>向量检索 · Top-K · 阈值过滤]
+        Pipeline --> Rewrite[Query Rewrite<br/>多轮追问补全]
+        Rewrite --> Retriever[Hybrid Retriever<br/>向量 + BM25 · RRF 融合]
         Retriever --> Embed[Embedding Provider<br/>通义 / OpenAI / 本地 bge / Mock]
         Retriever --> VDB[(Vector DB<br/>Chroma)]
+        Retriever --> BM25[(BM25 索引<br/>jieba 分词)]
+        Retriever --> Rerank[Reranker<br/>通义 gte-rerank · 拒答闸门]
         Pipeline --> Prompt[Prompt 组装<br/>资料编号注入]
         Prompt --> LLM[LLM Provider<br/>DeepSeek / OpenAI / 通义 / 任意 OpenAI 兼容 / Mock]
         LLM --> Cite[Citation 校验与对齐]
-        API --> Meta[(SQLite<br/>知识库 · 文档 · 切片原文 · 检索记录)]
+        API --> Meta[(SQLite<br/>知识库 · 文档 · 切片原文 · 检索记录 · 评测)]
+        API --> Eval[Eval Runner<br/>评测集 · 指标计算]
+        Eval --> Pipeline
     end
 
     Cite --> API
@@ -78,8 +91,12 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    U[User] --> W[Web UI] --> R[RAG API] --> RT[Retriever] --> V[(Vector DB)]
-    V --> RT --> L[LLM] --> A[Answer + Citation] --> W
+    U[User] --> W[Web UI] --> R[RAG API] --> QR[Query Rewrite] --> RT[Retriever]
+    RT --> V[(Vector DB)] --> F[RRF 融合]
+    RT --> B[(BM25)] --> F
+    F --> RR[Rerank] --> G{拒答闸门}
+    G -- 有相关资料 --> L[LLM] --> A[Answer + Citation] --> W
+    G -- 无相关资料 --> N[没有找到足够的信息] --> W
 ```
 
 **入库链路**
@@ -103,24 +120,31 @@ enterprise-kb/
 │   │   ├── db.py               SQLAlchemy 模型：KnowledgeBase / Document / Chunk / QueryLog
 │   │   ├── providers/          ★ 模型抽象层
 │   │   │   ├── llm.py          LLMProvider 接口；OpenAI 兼容实现；Mock 抽取式回答器
-│   │   │   └── embedding.py    EmbeddingProvider 接口；远程 / 本地 fastembed / Mock
+│   │   │   ├── embedding.py    EmbeddingProvider 接口；远程 / 本地 fastembed / Mock
+│   │   │   └── rerank.py       Reranker 接口；通义 gte-rerank
 │   │   ├── rag/                ★ RAG Pipeline，每个环节一个文件
 │   │   │   ├── parsers.py      Parser（可注册新格式）
 │   │   │   ├── cleaning.py     Text Cleaning（含 PDF 断行修复）
 │   │   │   ├── chunking.py     Chunking（LangChain text-splitters）
 │   │   │   ├── ingest.py       入库编排：解析 → 清洗 → 切片 → 向量化 → 写库
 │   │   │   ├── vectorstore.py  Vector DB 适配（Chroma），换库只改这一个文件
-│   │   │   ├── retriever.py    Retriever 接口（预留 Hybrid / Rerank / Query Rewrite）
+│   │   │   ├── bm25.py         BM25 关键词索引（jieba 分词，按知识库缓存，文档变更自动重建）
+│   │   │   ├── retriever.py    混合检索：向量 + BM25 → RRF 融合 → Rerank → 拒答闸门
+│   │   │   ├── query_rewrite.py 多轮追问改写
 │   │   │   ├── prompts.py      System Prompt 与资料注入格式
 │   │   │   ├── citations.py    引用规范化、越界过滤、重编号
 │   │   │   └── pipeline.py     问答编排，产出 SSE 事件流并记录检索轨迹
+│   │   ├── eval/               ★ RAG 评测
+│   │   │   ├── datasets/demo.json  26 道评测题（5 类题型）
+│   │   │   └── runner.py       逐题运行、自动评分、指标汇总
 │   │   └── api/                REST 接口
 │   ├── scripts/
 │   │   ├── seed_demo.py        初始化产品 / 运营 / 技术 / 人事行政四个知识库
+│   │   ├── run_eval.py         命令行评测，输出多策略对比表
 │   │   └── make_demo_files.py  生成 Demo PDF 和 DOCX
 │   └── tests/test_rag.py       单元测试 + 离线端到端测试
 └── frontend/src/
-    ├── app/                    页面：/  /kb/[id]  /chat  /retrievals  /retrievals/[id]  /settings
+    ├── app/                    页面：/  /kb/[id]  /chat  /retrievals  /retrievals/[id]  /evals  /evals/[id]  /settings
     ├── components/             AnswerMarkdown（引用角标）、SourceDrawer（原文查看）、UI 组件
     └── lib/api.ts              类型定义、API 封装、SSE 流式解析
 ```
@@ -143,17 +167,31 @@ enterprise-kb/
 
 ```
 用户问题
-  → Embedding（问题向量）
-  → 向量检索 Top-K = 5
-  → 相似度阈值过滤（通义 v4 为 0.45）
-      └─ 全部低于阈值 → 直接回答「当前知识库中没有找到足够的信息」，不调用 LLM
+  → Query Rewrite：有对话历史时，让 LLM 把追问改写成独立问题（「那总监呢？」→「总监出差住宿标准是多少？」）
+  → 两路召回，各取 20 个候选
+      ├─ 向量检索：问题向量 vs 切片向量，余弦相似度（擅长语义：「酒店能报多少」≈「住宿标准」）
+      └─ BM25：jieba 分词后做关键词匹配（擅长字面：XH-FIN-018、400-800-1234、分机 8021）
+  → RRF 融合：score = Σ 1 / (60 + rank)，只看排名，不需要对齐两种分数的量纲
+  → Rerank：通义 gte-rerank 对候选做「问题 + 切片」交叉打分，重新排序，取 Top-5
+  → 拒答闸门：重排分数 ≥ 0.15 或 余弦相似度 ≥ 0.55 的切片才送入 LLM
+      └─ 全部不达标 → 直接回答「当前知识库中没有找到足够的信息」，不调用 LLM
   → 组装 Prompt：System Prompt + 资料按 [1]..[n] 编号注入 + 最近 3 轮对话 + 用户问题
   → LLM 流式生成（SSE 推送到前端）
   → Citation 后处理：统一【1】/[1,2] 等格式 → 删除越界编号 → 按出现顺序重编号 → 对齐到真实切片
   → 返回 Answer + Citations，整条轨迹写入检索记录
 ```
 
-**阈值是用数据标定的**：在 Demo 知识库上，通义 `text-embedding-v4` 对相关问题的 top-1 相似度在 0.63–0.78，对「今天天气怎么样」「公司上市计划」这类无关问题在 0.28–0.40，因此取 0.45。不同 Embedding 模型的分布不同，阈值按模型分别配置（见 `providers/embedding.py`），也可用 `MIN_SCORE` 覆盖。
+每一步都可以在 `.env` 里配置，也可以在问答页右上角的「检索策略」菜单里按请求临时切换，方便现场对比。
+
+**闸门阈值是用评测数据标定的**，不是拍脑袋：
+
+| 信号 | 能回答的题（正确切片） | 应拒答的题（最高分） | 结论 |
+|---|---|---|---|
+| 余弦相似度（通义 text-embedding-v4） | 0.40 – 0.78 | 0.41 | 有重叠：仅靠相似度，「分机 8021」「400 电话」这类精确匹配题会被误拒 |
+| 重排分数（gte-rerank-v2） | 0.17 – 0.92 | 0.14 | 能分开，但口语化问法（「请客户吃饭每人能花多少」）分数偏低，余量很小 |
+| **两者结合** | 重排 ≥ 0.15 **或** 相似度 ≥ 0.55 | — | 评测集上无误拒、无漏拒 |
+
+v0.1 只有向量检索时，阈值固定为相似度 0.45（见 `providers/embedding.py`，按模型分别配置），也可用 `MIN_SCORE` 覆盖。
 
 **System Prompt 要点**（完整内容见 `rag/prompts.py`，设置页和检索详情页里也能看到）：只依据参考资料；资料里没有就回答「当前知识库中没有找到足够的信息。」；部分能答就说明哪部分没提到；每条关键信息标注 `[编号]`，禁止编造编号；数字、金额、时限必须与原文一致。
 
@@ -166,6 +204,8 @@ enterprise-kb/
 | 文档解析 | pypdf · python-docx | 成熟稳定，能拿到页码和样式信息 |
 | 切片 | **LangChain text-splitters**（MarkdownHeaderTextSplitter + RecursiveCharacterTextSplitter） | 只引入切分这一个成熟组件。Pipeline 编排自己写，每个环节可见、可调试，不被框架黑盒挡住 |
 | 向量库 | **Chroma**（本地持久化） | 无需 Docker，`pip install` 即可用；适配层已隔离，可换 Qdrant / Milvus / pgvector |
+| 关键词检索 | **rank-bm25 + jieba** | 切片原文本就在 SQLite，内存中建 BM25 索引即可；规模变大可换 Elasticsearch，接口不变 |
+| 重排 | **通义 gte-rerank-v2** | 中文效果好，约 300 ms；`Reranker` 接口可换 Cohere / Jina / 本地 bge-reranker |
 | Embedding | 通义 `text-embedding-v4`（默认）/ OpenAI / **本地 bge-small-zh-v1.5（fastembed，CPU 运行）** / Mock | 中文效果好；没有 Key 也能用本地模型做真实的语义检索 |
 | LLM | DeepSeek（默认）/ OpenAI / 通义千问 / 任意 OpenAI 兼容接口 / Mock | 统一 `LLMProvider` 接口，`.env` 切换，不写死任何厂商 |
 | 流式 | SSE（`retrieval → token… → done` 事件流） | 先展示「召回了几个片段」再逐字输出，演示时用户能看到 RAG 的每一步 |
@@ -210,12 +250,16 @@ LLM_MODEL=                     # 留空用预设默认模型
 
 EMBEDDING_PROVIDER=qwen        # openai / qwen / openai_compatible / local / mock
 EMBEDDING_API_KEY=sk-...       # 与 LLM 同厂商时可留空，自动复用
+
+RERANK_PROVIDER=qwen           # qwen / none；EMBEDDING_PROVIDER=qwen 时自动复用其 Key
+RETRIEVAL_MODE=hybrid          # hybrid（向量 + BM25）/ vector
+QUERY_REWRITE=true             # 多轮追问改写（Mock LLM 下自动跳过）
 ```
 
 | 场景 | 配置 |
 |---|---|
 | 完全离线、零 Key | `LLM_PROVIDER=mock`，`EMBEDDING_PROVIDER=local`（首次自动下载约 100MB 模型）。Mock LLM 会从检索结果中抽取原文片段作答，同样带引用 |
-| 国内模型（推荐） | `LLM_PROVIDER=deepseek` + `EMBEDDING_PROVIDER=qwen` |
+| 国内模型（推荐） | `LLM_PROVIDER=deepseek` + `EMBEDDING_PROVIDER=qwen` + `RERANK_PROVIDER=qwen` |
 | 全部 OpenAI | `LLM_PROVIDER=openai` + `EMBEDDING_PROVIDER=openai` |
 | 其他厂商（Kimi、智谱、本地 vLLM / Ollama…） | `LLM_PROVIDER=openai_compatible` + 填写 `LLM_BASE_URL` 和 `LLM_MODEL` |
 
@@ -241,59 +285,137 @@ EMBEDDING_API_KEY=sk-...       # 与 LLM 同厂商时可留空，自动复用
 - 新建一个空知识库，点「**使用示例资料**」：走与手动上传完全相同的上传流程
 - 运行 `backend/.venv/bin/python backend/scripts/seed_demo.py`：创建产品 / 运营 / 技术 / 人事行政四个部门知识库
 
-### 面试演示脚本（约 5 分钟）
+### 面试演示脚本（约 7 分钟）
 
 1. **首页**：介绍场景，展示按部门划分的知识库和统计数据
 2. **新建知识库 → 拖入文件**：看状态从「解析中」变成「向量化中」再到「已完成」，点开切片数，展示 PDF 切片带页码、Word 切片带章节路径
 3. **AI 问答**：问「经销商提现需要满足什么条件？」，讲解进度条（召回 5 个片段 → 生成回答）、引用角标、来源卡片；点开引用，看到原文和「来源已校验」
-4. **问一个知识库外的问题**（「公司明年的上市计划是什么？」）：系统直接回答「没有找到足够的信息」，不调用大模型，也不编造
-5. **检索详情**：讲解 Pipeline 耗时拆解、5 个切片的相似度与阈值线、哪些被引用、实际发给模型的 Prompt，说明如何用这个页面定位「没检索到」还是「模型答错」
+4. **多轮追问**：接着问「那总监呢？」，进度条显示「改写为『总监出差住宿标准是多少？』」，答案正确
+5. **问一个知识库外的问题**（「公司明年的上市计划是什么？」）：系统直接回答「没有找到足够的信息」，不调用大模型，也不编造
+6. **检索详情**：讲解 7 个阶段的耗时、每个切片的向量 / BM25 / 重排分数与阈值、哪些被引用、实际发给模型的 Prompt，说明如何用这个页面定位「没检索到」还是「模型答错」
+7. **RAG 评测**：打开评测页，展示纯向量 81% → 混合 + 重排 + 改写 100% 的对比；点进纯向量那次，按题型看出短板在「精确匹配」和「多轮追问」，再讲每项改进分别解决了哪类问题
 
-## 9. 测试结果
+## 9. RAG 评测
 
-**自动化测试**：`cd backend && .venv/bin/pytest -q` → **13 passed**
+「这个知识库好不好用」不能只靠演示时挑几个问题。v0.2 加入了评测体系：用一组带标准答案的问题自动打分，每次调整检索策略都能用数据说明效果。
+
+### 评测集
+
+`backend/app/eval/datasets/demo.json`，26 题，覆盖 7 份 Demo 文件，按真实用户的提问方式分为 5 类：
+
+| 题型 | 数量 | 例子 | 考察什么 |
+|---|---|---|---|
+| 直接问法 | 8 | 员工请婚假可以休几天？ | 基础检索能力 |
+| 换种问法 | 7 | 去上海出差，普通员工一晚的酒店能报多少？ | 语义理解（原文是「一线城市住宿标准」） |
+| 精确匹配 | 4 | 分机 8021 是哪个部门？ | 编号、电话、专有名词的字面匹配 |
+| 多轮追问 | 3 | （上一轮问普通员工住宿）那总监呢？ | 结合上下文理解省略的问题 |
+| 应拒答 | 4 | 员工食堂几点开饭？ | 知识库里没有时，不编造 |
+
+每道题标注了「答案所在文档」和「关键事实」（金额、时限、名称），用于自动判分。
+
+### 指标
+
+| 指标 | 含义 |
+|---|---|
+| Hit@K | 答案所在文档出现在送入 LLM 的 Top-K 切片中的比例 |
+| MRR | 答案所在文档第一次出现的位置的倒数，取平均（排得越前越高） |
+| Context Recall | 关键事实出现在送入 LLM 的切片中的比例 |
+| 拒答准确率 / 误拒率 | 该拒答的拒答了、不该拒答的作答了；能回答却被拒答的比例 |
+| 答案准确率 | （完整问答模式）答案包含全部关键事实的比例 |
+| 引用命中率 | （完整问答模式）引用中包含正确文档的比例 |
+
+### 结果（Demo 企业知识库，通义 text-embedding-v4 + DeepSeek deepseek-flash）
+
+**仅检索模式**（逐项叠加改进，约 15 秒跑完）：
+
+| 策略 | 通过率 | Hit@5 | MRR | Context Recall | 拒答准确 | 误拒率 | 平均耗时 |
+|---|---|---|---|---|---|---|---|
+| 纯向量（v0.1） | 81% | 82% | 0.788 | 77% | 92% | 9% | 245 ms |
+| + 追问改写 | 88% | 91% | 0.879 | 86% | 96% | 5% | 376 ms |
+| + BM25 混合检索 | 92% | 91% | 0.909 | 91% | 96% | 5% | 436 ms |
+| **+ Rerank（v0.2）** | **100%** | **100%** | **1.000** | **100%** | **100%** | **0%** | 572 ms |
+
+**完整问答模式**（含 LLM 生成，评估最终答案）：
+
+| 策略 | 通过率 | 答案准确率 | 引用命中率 | 误拒率 | 平均耗时 |
+|---|---|---|---|---|---|
+| 纯向量（v0.1） | 81% | 77% | 77% | 23% | 2.6 s |
+| **混合 + 重排 + 改写（v0.2）** | **100%** | **100%** | **100%** | **0%** | 3.1 s |
+
+**从失败案例看每项改进解决了什么**：
+
+- **追问改写**：v0.1 直接拿「那总监呢？」去检索，召回的是不相关的切片 → 改写成「总监出差住宿标准是多少？」后命中
+- **BM25**：「XH-FIN-018」「400-800-1234」这类编号对向量模型来说语义很弱，BM25 的字面匹配能直接排到第一
+- **Rerank**：BM25 找到了「分机 8021」所在的切片，但它和问题的余弦相似度只有 0.40，被相似度闸门拦下；重排模型直接判断「问题 + 切片」是否相关，给出 0.35 分放行。同时把应拒答问题的分数压到 0.14 以下
+- **代价**：每题多约 330 ms（重排约 300 ms，改写仅在有对话历史时触发，约 1–2 s）
+
+> **诚实说明**：闸门阈值就是在这 26 道题上标定的，100% 有过拟合成分，代表「在已知问题上调到最好」。要得到可信的泛化结论，需要更大的、与调参集分开的测试集（见 Roadmap）。这套评测框架的价值在于：任何改动都能在 15 秒内看到量化影响，并定位到具体哪道题、哪个环节出了问题。
+
+### 怎么跑
+
+- 页面：侧边栏「RAG 评测」→「新建评测」，选择知识库、模式和检索策略
+- 命令行：`backend/.venv/bin/python backend/scripts/run_eval.py`（输出上面这样的对比表，结果同时出现在评测页）
+
+```bash
+backend/.venv/bin/python backend/scripts/run_eval.py --mode full --configs vector,hybrid+rerank
+```
+
+## 10. 测试结果
+
+**自动化测试**：`cd backend && .venv/bin/pytest -q` → **16 passed**
 
 - 引用：越界编号被删除，按出现顺序重编号，`[1][1]` 去重
 - 清洗：PDF 断行修复不误伤标题和列表
 - 7 个 Demo 文件全部解析成功；切片不超过 500 字符；PDF 页码 {1,2,3} 全部保留；MD / DOCX 带章节路径；Markdown 切片不跨章节
+- BM25 分词保留编号和电话的各段，过滤停用词
+- 混合检索：精确编号 `XH-FIN-018` 由 BM25 排到第一；纯向量模式不走 BM25
+- 重排闸门：按重排分数排序；「重排达标 或 相似度达标」任一满足即放行
+- 评测：单题判分（命中排名、Context Recall）与指标汇总（Hit Rate、MRR、拒答准确率、按题型统计）
 - 离线端到端（Mock LLM + Mock Embedding）：上传 → 解析 → 问答 → 每条引用都指向真实存在的切片 → 检索记录落库 → SSE 事件顺序正确 → 删除文档后不再被召回
 
-**浏览器端到端验收**（DeepSeek `deepseek-flash` + 通义 `text-embedding-v4`）：
+**浏览器端到端验收**（DeepSeek `deepseek-flash` + 通义 `text-embedding-v4` + `gte-rerank-v2`）：
 
-启动 → 新建知识库 → 上传 7 份资料（MD / PDF / DOCX / TXT）→ 全部解析成功（41 个切片）→ AI 问答选择该知识库 → 提问 → 召回 5 个相关切片 → 流式生成带引用的回答 → 点击引用查看原文 → 查看检索详情。另外验证了拖拽上传、重新解析、删除文档、删除知识库、连通性测试。
+- v0.1：新建知识库 → 上传 7 份资料（MD / PDF / DOCX / TXT）→ 全部解析成功（41 个切片）→ 问答 → 召回 → 流式生成带引用的回答 → 点击引用查看原文 → 检索详情；拖拽上传、重新解析、删除文档、删除知识库、连通性测试
+- v0.2：问答页切换检索策略；多轮追问「那总监呢？」被改写并答对（900 元/晚）；检索详情展示 7 个阶段与多路分数；评测页新建评测、查看进度、横向对比、逐题展开失败原因
 
-| 问题 | Top-1 来源 | 相似度 | 结果 |
-|---|---|---|---|
-| 员工出差住宿最多可以报销多少钱？ | 员工报销制度.md › 3.2 住宿标准 | 0.78 | 按职级 × 城市列出全部标准，数字与原文一致 |
-| 商品退款需要满足什么条件？ | 产品退款规则.md › 二、退款申请条件 | 0.71 | 4 项条件 + 不支持退款的情形，2 条引用 |
-| 经销商提现规则是什么？ | 经销商管理制度.md › 四、经销商提现规则 | 0.67 | 综合 MD + DOCX 两份文件，5 条引用 |
-| 维修多久能寄回？ | 商城售后服务规则.pdf **第 2 页** | 0.60 | 引用带页码 |
-| 公司明年的上市计划是什么？ | — | 0.40（低于阈值） | 拒答，未调用 LLM，338 ms |
-
-典型耗时：Embedding ~350 ms，向量检索 2–3 ms，首字 1–6 s（取决于模型），总计 1.2–9 s。
-
-## 10. 后续 Roadmap
-
-架构上已经预留了扩展点（`Retriever` 接口、`vectorstore.py` 适配层、`parsers.PARSERS` 注册表、`Document.source`、`KnowledgeBase.department`、`QueryLog.retrieval_query`）：
-
-| 阶段 | 方向 | 内容 |
+| 问题 | Top-1 来源 | 结果 |
 |---|---|---|
-| **检索质量** | Hybrid Search | 切片原文已在 SQLite，建 FTS5 / BM25 索引，与向量检索用 RRF 融合，补足编号、专有名词的精确匹配 |
-| | Reranker | 召回 Top-20 后用 bge-reranker / Cohere Rerank 精排到 Top-5 |
-| | Query Rewrite / Multi-Query | 结合多轮上下文改写问题（「那经理呢？」→「经理级出差住宿标准」），或拆成多个子查询 |
-| **评测** | RAG Evaluation | 基于检索记录构建评测集，度量 Recall@K、引用准确率、拒答准确率、忠实度（RAGAS）；对比切片大小、阈值、模型 |
-| | 用户反馈 | 回答点赞 / 点踩，坏例子回流评测集 |
-| **企业化** | 权限 | 用户 / 部门 / 角色，检索时把权限条件下推到向量库过滤 |
-| | 数据源同步 | 飞书 / Notion / Confluence / Google Drive 增量同步，网页抓取，文档版本管理 |
-| | 解析增强 | 扫描件 OCR、PPTX / Excel、表格结构化、图片理解 |
-| **智能化** | Agent | 知识库作为工具，结合业务系统查询（如「我的报销单到哪一步了」） |
-| | MCP | 把知识库检索封装成 MCP Server，供 Claude / Cursor 等客户端直接调用 |
-| | Knowledge Graph | 抽取制度之间的引用关系（如「细则 → 管理制度」），支持跨文档推理 |
-| **工程化** | 部署 | Docker Compose、PostgreSQL + pgvector / Qdrant、异步任务队列（Celery / Arq）、对象存储 |
+| 员工出差住宿最多可以报销多少钱？ | 员工报销制度.md › 3.2 住宿标准 | 按职级 × 城市列出全部标准，数字与原文一致 |
+| 经销商提现规则是什么？ | 经销商管理制度.md › 四、经销商提现规则 | 综合 MD + DOCX 两份文件，5 条引用 |
+| 维修多久能寄回？ | 商城售后服务规则.pdf **第 2 页** | 引用带页码 |
+| XH-FIN-018 是哪份文件？ | 经销商结算与提现细则.docx（BM25 #1，重排 0.91） | 只有这一个切片通过闸门 |
+| （追问）那总监呢？ | 改写为「总监出差住宿标准是多少？」 | 900 / 700 / 500 元/晚 |
+| 公司明年的上市计划是什么？ | —（重排最高 0.006） | 拒答，未调用 LLM |
+
+典型耗时：Embedding ~300 ms，向量检索 / BM25 各 < 5 ms，重排 ~300 ms，首字 1–8 s（取决于模型和上下文长度）。
+
+## 11. 后续 Roadmap
+
+架构上的扩展点：`Retriever` / `Reranker` / `LLMProvider` / `EmbeddingProvider` 接口、`vectorstore.py` 适配层、`parsers.PARSERS` 注册表、`Document.source`、`KnowledgeBase.department`、评测集目录。
+
+| 阶段 | 方向 | 内容 | 状态 |
+|---|---|---|---|
+| **检索质量** | Hybrid Search | 向量 + BM25，RRF 融合 | ✅ v0.2 |
+| | Reranker | 通义 gte-rerank 精排，并作为拒答闸门 | ✅ v0.2 |
+| | Query Rewrite | 多轮追问改写成独立问题 | ✅ v0.2 |
+| | Multi-Query / HyDE | 复杂问题拆成多个子查询；生成假设答案再检索 | |
+| **评测** | RAG Evaluation | 评测集 + Hit@K / MRR / Context Recall / 拒答 / 答案准确率 + 策略对比页面 | ✅ v0.2 |
+| | 扩大评测集 | 调参集与测试集分离；从真实检索记录中挑选问题补充 | |
+| | LLM-as-Judge | 用大模型评估答案的忠实度和完整性（RAGAS 风格），补充关键词匹配 | |
+| | 用户反馈 | 回答点赞 / 点踩，坏例子自动进入评测集 | |
+| **企业化** | 权限 | 用户 / 部门 / 角色，检索时把权限条件下推到向量库过滤 | |
+| | 数据源同步 | 飞书 / Notion / Confluence / Google Drive 增量同步，网页抓取，文档版本管理 | |
+| | 解析增强 | 扫描件 OCR、PPTX / Excel、表格结构化、图片理解 | |
+| **智能化** | Agent | 知识库作为工具，结合业务系统查询（如「我的报销单到哪一步了」） | |
+| | MCP | 把知识库检索封装成 MCP Server，供 Claude / Cursor 等客户端直接调用 | |
+| | Knowledge Graph | 抽取制度之间的引用关系（如「细则 → 管理制度」），支持跨文档推理 | |
+| **工程化** | 部署 | Docker Compose、PostgreSQL + pgvector / Qdrant、异步任务队列、对象存储 | |
 
 ## 已知限制
 
 - 文档解析在 FastAPI 后台任务中执行，适合演示规模；大批量导入应改为任务队列
 - 不支持扫描版 PDF（无文字层，需 OCR）
 - 暂无登录和权限控制，所有知识库对所有人可见
-- 多轮对话中，检索只使用当前问题（追问类问题需要 Query Rewrite，见 Roadmap）
+- 评测集只有 26 题，且闸门阈值在同一批题上标定，指标偏乐观
+- BM25 索引在内存中按知识库构建，适合万级以下切片
+- 追问改写会额外调用一次 LLM（约 1–2 s），只在有对话历史时触发

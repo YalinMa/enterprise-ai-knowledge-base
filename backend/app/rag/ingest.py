@@ -89,12 +89,17 @@ def ingest_document(document_id: int) -> None:
 
 
 def reset_stuck_documents() -> None:
-    """服务重启时，把上次没跑完的文档重新排队。"""
+    """服务重启时，把上次没跑完的文档重新排队；顺便预热 jieba 词典，避免第一次检索多等 0.5 秒。
+
+    必须先取出待处理文档再预热：否则预热期间新上传的文档也会被捞出来，与上传任务重复入库。
+    """
     db = SessionLocal()
     try:
         ids = db.scalars(select(Document.id).where(
             Document.status.in_(["pending", "parsing", "embedding"]))).all()
     finally:
         db.close()
+    from app.rag.bm25 import tokenize
+    tokenize("预热")
     for i in ids:
         ingest_document(i)
