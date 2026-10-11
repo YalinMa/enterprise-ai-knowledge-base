@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: #f7f7f8;
+  color: #18181b;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 细滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+/* 回答正文排版 */
+.prose-answer {
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: #27272a;
+  overflow-wrap: anywhere;
+}
+.prose-answer > * + * {
+  margin-top: 0.6em;
+}
+.prose-answer h1,
+.prose-answer h2,
+.prose-answer h3 {
+  font-weight: 600;
+  color: #18181b;
+  margin-top: 1em;
+}
+.prose-answer h1 { font-size: 1.15em; }
+.prose-answer h2 { font-size: 1.08em; }
+.prose-answer h3 { font-size: 1em; }
+.prose-answer ul,
+.prose-answer ol {
+  padding-left: 1.3em;
+}
+.prose-answer ul { list-style: disc; }
+.prose-answer ol { list-style: decimal; }
+.prose-answer li + li { margin-top: 0.25em; }
+.prose-answer li > ul, .prose-answer li > ol { margin-top: 0.25em; }
+.prose-answer strong { font-weight: 600; color: #18181b; }
+.prose-answer blockquote {
+  border-left: 3px solid #e4e4e7;
+  padding-left: 0.9em;
+  color: #71717a;
+  font-size: 0.93em;
+}
+.prose-answer code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: #f4f4f5;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.prose-answer table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+  display: block;
+  overflow-x: auto;
+}
+.prose-answer th,
+.prose-answer td {
+  border: 1px solid #e4e4e7;
+  padding: 0.35em 0.7em;
+  text-align: left;
+}
+.prose-answer th { background: #fafafa; font-weight: 600; }
+
+/* 流式输出光标 */
+.typing-cursor::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: #6366f1;
+  border-radius: 1px;
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {
+  to { opacity: 0; }
+}
+
+@keyframes slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.animate-slide-in { animation: slide-in 0.18s ease-out; }
+
+@keyframes fade-up {
+  from { transform: translateY(6px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.animate-fade-up { animation: fade-up 0.22s ease-out; }
