@@ -29,6 +29,7 @@ def main() -> None:
     ap.add_argument("--kb", type=int, help="知识库 ID，默认用名称含 Demo 的知识库")
     ap.add_argument("--mode", default="retrieval", choices=["retrieval", "full"])
     ap.add_argument("--dataset", default="demo")
+    ap.add_argument("--llm-model", help="覆盖生成模型（同一厂商），如 deepseek-chat，用于模型选型对比")
     ap.add_argument("--configs", default=",".join(PRESETS), help="逗号分隔：" + " / ".join(PRESETS))
     args = ap.parse_args()
     c = httpx.Client(base_url=args.base.rstrip("/"), timeout=60)
@@ -43,14 +44,16 @@ def main() -> None:
 
     rows = []
     for name in args.configs.split(","):
-        body = {"kb_id": kb_id, "dataset": args.dataset, "mode": args.mode, **PRESETS[name.strip()]}
+        body = {"kb_id": kb_id, "dataset": args.dataset, "mode": args.mode, "llm_model": args.llm_model,
+                **PRESETS[name.strip()]}
         run = c.post("/api/evals", json=body).json()
         while run["status"] == "running":
             time.sleep(1)
             run = c.get(f"/api/evals/{run['id']}").json()
             print(f"\r{name:<16} {run['progress']}/{run['total']}", end="", flush=True)
         print(f"\r{name:<16} 完成（评测 #{run['id']}）" + (f" 失败：{run['error']}" if run["error"] else ""))
-        rows.append((name, run["metrics"]))
+        rows.append((f"{name} · {run['config']['llm'].split(':', 1)[-1]}" if args.mode == "full" else name,
+                     run["metrics"]))
 
     cols = [(k, label) for k, label in COLUMNS if any(m.get(k) is not None for _, m in rows)]
     print("\n| 策略 | " + " | ".join(label for _, label in cols) + " |")

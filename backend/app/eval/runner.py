@@ -22,11 +22,25 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.db import EvalRun, SessionLocal
+from sqlalchemy import select
+
+from app.db import EvalCaseRow, EvalRun, SessionLocal
 from app.rag.pipeline import RAGOptions, answer_stream, retrieve
 
 log = logging.getLogger("eval")
 DATASET_DIR = Path(__file__).parent / "datasets"
+
+
+FEEDBACK_DATASET = "feedback"
+
+
+def _feedback_cases() -> list[dict]:
+    db = SessionLocal()
+    try:
+        return [r.data for r in db.scalars(select(EvalCaseRow).where(
+            EvalCaseRow.dataset == FEEDBACK_DATASET).order_by(EvalCaseRow.id))]
+    finally:
+        db.close()
 
 
 def list_datasets() -> list[dict]:
@@ -38,10 +52,20 @@ def list_datasets() -> list[dict]:
             cats[c["category"]] = cats.get(c["category"], 0) + 1
         out.append({"id": p.stem, "name": d["name"], "description": d.get("description", ""),
                     "count": len(d["cases"]), "categories": cats})
+    fb = _feedback_cases()
+    if fb:
+        out.append({"id": FEEDBACK_DATASET, "name": "用户反馈评测集",
+                    "description": "由用户差评沉淀的问题，补充标准答案后加入，用于防止同类问题复发（回归测试）。",
+                    "count": len(fb), "categories": {"用户反馈": len(fb)}})
     return out
 
 
 def load_dataset(name: str) -> dict:
+    if name == FEEDBACK_DATASET:
+        cases = _feedback_cases()
+        if not cases:
+            raise ValueError("用户反馈评测集还没有题目")
+        return {"name": "用户反馈评测集", "cases": cases}
     p = DATASET_DIR / f"{name}.json"
     if not p.exists() or p.parent != DATASET_DIR:
         raise ValueError(f"评测集不存在：{name}")
@@ -149,7 +173,8 @@ def _execute(run_id: int) -> None:
         cases = load_dataset(run.dataset)["cases"]
         cfg = run.config
         opt = RAGOptions.from_settings(top_k=cfg["top_k"], retrieval_mode=cfg["retrieval_mode"],
-                                       rerank=cfg["rerank"], query_rewrite=cfg["query_rewrite"])
+                                       rerank=cfg["rerank"], query_rewrite=cfg["query_rewrite"],
+                                       llm_model=cfg.get("llm_model"))
         results = []
         for case in cases:
             try:

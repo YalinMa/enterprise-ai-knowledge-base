@@ -17,8 +17,10 @@ PROJECT_DIR = BACKEND_DIR.parent
 PROVIDER_PRESETS: dict[str, dict] = {
     "openai": {"label": "OpenAI", "base_url": "https://api.openai.com/v1",
                "llm_model": "gpt-5.5", "embedding_model": "text-embedding-3-small"},
+    # deepseek-flash 是推理模型（先思考再回答），评测中首字延迟 2.4s / P95 7.5s；
+    # deepseek-chat 质量相同（评测 100%）而首字 0.6s，因此作为默认
     "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com",
-                 "llm_model": "deepseek-flash", "embedding_model": None},
+                 "llm_model": "deepseek-chat", "embedding_model": None},
     "qwen": {"label": "通义千问", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
              "llm_model": "qwen-plus", "embedding_model": "text-embedding-v4"},
     "openai_compatible": {"label": "OpenAI 兼容接口", "base_url": None,
@@ -63,6 +65,7 @@ class Settings(BaseSettings):
     candidate_k: int = 20               # 每路召回的候选数，融合 / 重排后再截到 top_k
     rrf_k: int = 60                     # RRF 平滑常数
     query_rewrite: bool = True          # 多轮对话时把追问改写成独立问题再检索
+    rewrite_model: str = ""             # 追问改写用的模型（同一厂商），留空用 LLM_MODEL；建议用非推理的快模型
 
     # ---- 存储 ----
     data_dir: Path = BACKEND_DIR / "data"

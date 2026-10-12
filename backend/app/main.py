@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from app.api import chat, evals, knowledge
+from app.api import chat, evals, insights, knowledge
 from app.config import get_settings
 from app.db import EvalRun, SessionLocal, init_db
 from app.providers import describe_providers
@@ -35,7 +35,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Enterprise AI Knowledge Base", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Enterprise AI Knowledge Base", version="0.3.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in get_settings().cors_origins.split(",") if o.strip()],
@@ -44,6 +44,7 @@ app.add_middleware(
 app.include_router(knowledge.router)
 app.include_router(chat.router)
 app.include_router(evals.router)
+app.include_router(insights.router)
 
 
 @app.get("/api/health")

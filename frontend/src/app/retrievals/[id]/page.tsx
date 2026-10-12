@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Database,
   FileText,
+  FlaskConical,
   ListOrdered,
   MessageSquareQuote,
   ScanSearch,
@@ -19,18 +20,20 @@ import {
   SlidersHorizontal,
   WandSparkles,
 } from "lucide-react";
-import { fetcher, type QueryLog, type RetrievedChunk } from "@/lib/api";
+import { api, fetcher, type DocumentItem, type QueryLog, type RetrievedChunk } from "@/lib/api";
 import { formatDateTime, formatMs, locationLabel } from "@/lib/format";
 import { AnswerMarkdown } from "@/components/AnswerMarkdown";
 import { SourceDrawer, type SourceRef } from "@/components/SourceDrawer";
-import { Badge, Card, ErrorBanner, PageContainer, QueryStatusBadge, ScoreBar, Spinner } from "@/components/ui";
+import { FeedbackBar } from "@/components/FeedbackBar";
+import { Badge, Button, Card, ErrorBanner, Modal, PageContainer, QueryStatusBadge, ScoreBar, Spinner } from "@/components/ui";
 
 export default function RetrievalDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: q, error } = useSWR<QueryLog>(`/api/retrievals/${id}`, fetcher, {
+  const { data: q, error, mutate } = useSWR<QueryLog>(`/api/retrievals/${id}`, fetcher, {
     refreshInterval: (d) => (d?.status === "running" ? 1000 : 0),
   });
   const [source, setSource] = useState<SourceRef | null>(null);
+  const [toEval, setToEval] = useState(false);
 
   if (error)
     return (
@@ -72,7 +75,16 @@ export default function RetrievalDetailPage() {
           <span className="font-mono">#{q.id}</span>
         </div>
         <div className="text-[11.5px] font-medium tracking-wider text-zinc-400 uppercase">User Question</div>
-        <h1 className="mt-1 text-[22px] font-semibold tracking-tight text-zinc-900">{q.question}</h1>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-[22px] font-semibold tracking-tight text-zinc-900">{q.question}</h1>
+          <div className="flex items-center gap-2 text-[12px] text-zinc-400">
+            <FeedbackBar queryId={q.id} value={q.feedback} onChange={(f) => mutate({ ...q, feedback: f }, false)} size={14} />
+            <Button size="sm" onClick={() => setToEval(true)}>
+              <FlaskConical size={13} /> 加入评测集
+            </Button>
+          </div>
+        </div>
+        {q.feedback?.comment && <div className="mt-1.5 text-[12.5px] text-rose-600">用户反馈：{q.feedback.comment}</div>}
         {q.retrieval_query !== q.question && (
           <div className="mt-1 text-[13px] text-zinc-500">
             检索 Query：<span className="font-mono">{q.retrieval_query}</span>
@@ -189,6 +201,7 @@ export default function RetrievalDetailPage() {
       )}
 
       <SourceDrawer source={source} onClose={() => setSource(null)} />
+      <ToEvalModal open={toEval} onClose={() => setToEval(false)} q={q} />
     </PageContainer>
   );
 }
@@ -314,5 +327,88 @@ function PromptBlock({ role, content, defaultOpen }: { role: string; content: st
         </pre>
       )}
     </Card>
+  );
+}
+
+/** 把这次问答沉淀为评测题：人工补上「答案在哪份文档、关键事实是什么」，之后每次评测都会检查它 */
+function ToEvalModal({ open, onClose, q }: { open: boolean; onClose: () => void; q: QueryLog }) {
+  const { data: docs } = useSWR<DocumentItem[]>(open ? `/api/knowledge-bases/${q.kb_id}/documents` : null, fetcher);
+  const [refuse, setRefuse] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [keywords, setKeywords] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function submit() {
+    setSaving(true);
+    setMsg("");
+    try {
+      await api.toEvalCase(q.id, {
+        expected_docs: refuse ? [] : picked,
+        expected_keywords: refuse ? [] : keywords.split(/[,，、\s]+/).filter(Boolean),
+        should_refuse: refuse,
+      });
+      setMsg("已加入「用户反馈评测集」，可在 RAG 评测页选择该评测集运行");
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="加入评测集"
+      width={500}
+      footer={
+        <>
+          <Button onClick={onClose}>关闭</Button>
+          <Button variant="primary" loading={saving} onClick={submit}>
+            加入
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4 text-[13px]">
+        <div className="rounded-lg bg-zinc-50 px-3 py-2 text-zinc-700">{q.question}</div>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={refuse} onChange={(e) => setRefuse(e.target.checked)} className="accent-brand-600" />
+          知识库里本来就没有答案，应该拒答
+        </label>
+        {!refuse && (
+          <>
+            <div>
+              <div className="mb-1.5 font-medium text-zinc-700">答案所在文档</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(docs ?? []).map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => setPicked((p) => (p.includes(d.filename) ? p.filter((x) => x !== d.filename) : [...p, d.filename]))}
+                    className={clsx(
+                      "rounded-full border px-2.5 py-1 text-[12px]",
+                      picked.includes(d.filename) ? "border-brand-300 bg-brand-50 text-brand-700" : "border-zinc-200 text-zinc-600",
+                    )}
+                  >
+                    {d.filename}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="block">
+              <div className="mb-1.5 font-medium text-zinc-700">关键事实（答案里必须出现的词，用逗号分隔）</div>
+              <input
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                placeholder="例如：900, 一线城市"
+                className="h-9 w-full rounded-lg border border-zinc-200 px-3 outline-none focus:border-brand-500"
+              />
+            </label>
+          </>
+        )}
+        {msg && <div className="text-[12.5px] text-emerald-700">{msg}</div>}
+      </div>
+    </Modal>
   );
 }

@@ -15,10 +15,10 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import get_settings
 from app.db import KnowledgeBase, QueryLog, SessionLocal
-from app.providers import get_embedder, get_llm, get_reranker
+from app.providers import Thinking, get_embedder, get_llm, get_reranker
 from app.rag.citations import resolve_citations
 from app.rag.prompts import NOT_FOUND, build_messages
-from app.rag.query_rewrite import rewrite_query
+from app.rag.query_rewrite import needs_rewrite, rewrite_query
 from app.rag.retriever import RetrievalOptions, RetrievalResult, Retriever
 
 log = logging.getLogger("rag")
@@ -35,6 +35,7 @@ class RAGOptions:
     retrieval_mode: str
     rerank: bool
     query_rewrite: bool
+    llm_model: str | None = None        # 覆盖生成模型（同一厂商），用于评测对比
 
     @classmethod
     def from_settings(cls, **overrides) -> "RAGOptions":
@@ -50,13 +51,14 @@ class RAGOptions:
 def retrieve(kb_id: int, question: str, history: list[dict], opt: RAGOptions
              ) -> tuple[str, RetrievalResult, dict]:
     """Query Rewrite + 检索。返回（实际检索用的 query, 检索结果, 耗时）。评测的「仅检索」模式也复用它。"""
-    settings, embedder, llm = get_settings(), get_embedder(), get_llm()
+    settings, embedder = get_settings(), get_embedder()
     timings: dict = {}
     query = question
-    if opt.query_rewrite and history:
+    if opt.query_rewrite and needs_rewrite(question, history):
         t = time.perf_counter()
         try:
-            query = rewrite_query(llm, question, history)
+            rewriter = get_llm(settings.rewrite_model or opt.llm_model)
+            query = rewrite_query(rewriter, question, history)
         except Exception:  # noqa: BLE001 —— 改写失败不影响问答，退回原问题
             log.exception("query rewrite failed")
         timings["rewrite_ms"] = _ms(t)
@@ -72,8 +74,9 @@ def retrieve(kb_id: int, question: str, history: list[dict], opt: RAGOptions
 
 def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
                   options: RAGOptions | None = None, source: str = "chat") -> Iterator[dict]:
-    settings, embedder, llm, reranker = get_settings(), get_embedder(), get_llm(), get_reranker()
     opt = options or RAGOptions.from_settings()
+    settings, embedder, reranker = get_settings(), get_embedder(), get_reranker()
+    llm = get_llm(opt.llm_model)
     history = (history or [])[-settings.history_turns * 2:]
     t_start = time.perf_counter()
 
@@ -89,6 +92,8 @@ def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
                             "embedding": embedder.signature,
                             "llm": f"{llm.provider}:{llm.model}",
                             "reranker": reranker.signature if reranker else None,
+                            "rewrite_llm": (get_llm(settings.rewrite_model or opt.llm_model).model
+                                            if opt.query_rewrite else None),
                             "chunk_size": settings.chunk_size,
                             "chunk_overlap": settings.chunk_overlap,
                             "candidate_k": settings.candidate_k,
@@ -140,9 +145,16 @@ def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
         t_llm = time.perf_counter()
         parts: list[str] = []
         first_token_ms = None
+        thinking_chars = 0
         try:
             context = [{"index": i, "content": c.content} for i, c in enumerate(used, 1)]
             for piece in llm.stream(messages, context=context):
+                if isinstance(piece, Thinking):
+                    # 推理模型先「思考」再输出正文：告诉前端正在思考，避免用户以为卡住了
+                    if thinking_chars == 0:
+                        yield {"type": "thinking"}
+                    thinking_chars += len(piece)
+                    continue
                 if first_token_ms is None:
                     first_token_ms = _ms(t_llm)
                 parts.append(piece)
@@ -162,7 +174,8 @@ def answer_stream(kb_id: int, question: str, history: list[dict] | None = None,
         if answer.startswith(NOT_FOUND[:10]):
             # 拒答时不展示引用：模型有时会引用资料来说明「资料里只有什么」，对用户反而是干扰
             answer, citations, status = re.sub(r"\[\d+\]", "", answer), [], "no_answer"
-        timings.update(llm_ms=_ms(t_llm), first_token_ms=first_token_ms, total_ms=_ms(t_start))
+        timings.update(llm_ms=_ms(t_llm), first_token_ms=first_token_ms, total_ms=_ms(t_start),
+                       thinking_chars=thinking_chars)
         cited_ids = {c["chunk_id"] for c in citations}
         for r in qlog.retrieved:
             r["cited"] = r["chunk_id"] in cited_ids

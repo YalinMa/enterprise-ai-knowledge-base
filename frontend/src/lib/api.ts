@@ -87,6 +87,7 @@ export interface Citation {
 
 export interface Timings {
   rewrite_ms?: number;
+  thinking_chars?: number;
   bm25_ms?: number;
   rerank_ms?: number;
   embed_ms?: number;
@@ -106,6 +107,7 @@ export interface QueryLogSummary {
   status: QueryStatus;
   answer: string;
   source?: string;
+  feedback?: Feedback | null;
   created_at: string;
   timings: Timings;
   citations: Citation[];
@@ -140,7 +142,7 @@ export interface QueryLog extends QueryLogSummary {
 
 export interface SystemConfig {
   providers: {
-    llm: { provider: string; model: string; is_mock: boolean; configured_provider: string };
+    llm: { provider: string; model: string; is_mock: boolean; configured_provider: string; rewrite_model?: string };
     embedding: {
       provider: string;
       model: string;
@@ -168,6 +170,43 @@ export interface SystemConfig {
   };
   supported_types: string[];
   system_prompt: string;
+}
+
+export interface Feedback {
+  rating: 1 | -1;
+  reasons: string[];
+  comment: string;
+  at: string;
+}
+
+export interface Insights {
+  total: number;
+  refused: number;
+  refusal_rate: number | null;
+  upvotes: number;
+  downvotes: number;
+  feedback_rate: number | null;
+  latency_avg_ms: number | null;
+  first_token_avg_ms: number | null;
+  trend: { date: string; total: number; refused: number }[];
+  doc_usage: { document_id: number; filename: string; kb_name: string; citations: number }[];
+  hot_questions: { question: string; count: number; examples: string[]; refused: number }[];
+  problem_count: number;
+}
+
+export interface KnowledgeGap {
+  topic: string;
+  out_of_scope?: boolean;
+  suggestion: string;
+  owner: string;
+  count: number;
+  refused: number;
+  downvoted: number;
+  questions: string[];
+  query_ids: number[];
+  kb_names: string[];
+  reasons: string[];
+  last_at: string;
 }
 
 export interface RetrievalSettings {
@@ -218,7 +257,14 @@ export interface EvalRun {
   kb_name: string;
   dataset: string;
   mode: "retrieval" | "full";
-  config: RetrievalSettings & { top_k: number; embedding: string; llm: string; reranker: string | null; chunk_size: number };
+  config: RetrievalSettings & {
+    top_k: number;
+    embedding: string;
+    llm: string;
+    llm_model?: string | null;
+    reranker: string | null;
+    chunk_size: number;
+  };
   status: "running" | "done" | "failed";
   progress: number;
   total: number;
@@ -289,9 +335,24 @@ export const api = {
     return new File([await res.blob()], name);
   },
   seedDemo: () => request<{ kb_id: number; added: string[] }>("/api/demo/seed", json("POST")),
-  createEval: (body: { kb_id: number; dataset: string; mode: string } & RetrievalSettings & { top_k: number }) =>
+  createEval: (
+    body: { kb_id: number; dataset: string; mode: string; llm_model?: string | null } & RetrievalSettings & { top_k: number },
+  ) =>
     request<EvalRun>("/api/evals", json("POST", body)),
   deleteEval: (id: number) => request<void>(`/api/evals/${id}`, { method: "DELETE" }),
+  setFeedback: (id: number, body: { rating: number; reasons?: string[]; comment?: string }) =>
+    request<QueryLogSummary>(`/api/retrievals/${id}/feedback`, json("PUT", body)),
+  toEvalCase: (
+    id: number,
+    body: { expected_docs: string[]; expected_keywords: string[]; should_refuse: boolean },
+  ) => request<{ id: number }>(`/api/retrievals/${id}/to-eval`, json("POST", body)),
+  knowledgeGaps: (kbId?: number | null) =>
+    request<{ gaps: KnowledgeGap[]; generated_by: string | null; problem_count: number; generated_at?: string }>(
+      `/api/insights/gaps${kbId ? `?kb_id=${kbId}` : ""}`,
+      json("POST"),
+    ),
+  exportGaps: (kbId?: number | null) =>
+    request<{ markdown: string }>(`/api/insights/gaps/export${kbId ? `?kb_id=${kbId}` : ""}`),
   testSystem: () =>
     request<{
       embedding: { ok: boolean; dim?: number; error?: string };
@@ -315,6 +376,7 @@ export type ChatEvent =
       gate: "similarity" | "rerank";
       warning: string | null;
     }
+  | { type: "thinking" }
   | { type: "token"; text: string }
   | {
       type: "done";

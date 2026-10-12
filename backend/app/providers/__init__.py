@@ -6,13 +6,13 @@ from functools import lru_cache
 from app.config import PROVIDER_PRESETS, get_settings
 from app.providers.embedding import (EmbeddingProvider, LocalEmbedding, MockEmbedding,
                                      OpenAICompatEmbedding)
-from app.providers.llm import LLMProvider, MockLLM, OpenAICompatLLM
+from app.providers.llm import LLMProvider, MockLLM, OpenAICompatLLM, Thinking
 from app.providers.rerank import QwenReranker, Reranker
 
 log = logging.getLogger("providers")
 
 __all__ = ["get_llm", "get_embedder", "get_reranker", "describe_providers", "LLMProvider",
-           "EmbeddingProvider", "Reranker"]
+           "EmbeddingProvider", "Reranker", "Thinking"]
 
 
 def _resolve(provider: str, base_url: str, model: str, kind: str) -> tuple[str, str]:
@@ -27,11 +27,12 @@ def _resolve(provider: str, base_url: str, model: str, kind: str) -> tuple[str, 
 
 
 @lru_cache
-def get_llm() -> LLMProvider:
+def get_llm(model: str | None = None) -> LLMProvider:
+    """model 可覆盖默认模型（同一厂商），用于追问改写换快模型、评测对比不同模型。"""
     s = get_settings()
     if s.llm_provider == "mock" or not s.llm_api_key:
         return MockLLM()
-    base_url, model = _resolve(s.llm_provider, s.llm_base_url, s.llm_model, "llm")
+    base_url, model = _resolve(s.llm_provider, s.llm_base_url, model or s.llm_model, "llm")
     return OpenAICompatLLM(s.llm_provider, s.llm_api_key, base_url, model,
                            s.llm_temperature, s.llm_extra_body)
 
@@ -71,7 +72,8 @@ def describe_providers() -> dict:
     s, llm, emb, rr = get_settings(), get_llm(), get_embedder(), get_reranker()
     return {
         "llm": {"provider": llm.provider, "model": llm.model, "is_mock": llm.is_mock,
-                "configured_provider": s.llm_provider},
+                "configured_provider": s.llm_provider,
+                "rewrite_model": get_llm(s.rewrite_model or None).model},
         "embedding": {"provider": emb.provider, "model": emb.model, "is_mock": emb.is_mock,
                       "configured_provider": s.embedding_provider,
                       "signature": emb.signature},

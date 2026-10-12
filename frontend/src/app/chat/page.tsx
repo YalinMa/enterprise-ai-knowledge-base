@@ -26,6 +26,7 @@ import {
   streamChat,
   type Citation,
   type DocumentItem,
+  type Feedback,
   type KnowledgeBase,
   type QueryStatus,
   type RetrievalSettings,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/api";
 import { formatMs, locationLabel } from "@/lib/format";
 import { AnswerMarkdown } from "@/components/AnswerMarkdown";
+import { FeedbackBar } from "@/components/FeedbackBar";
 import { SourceDrawer, type SourceRef } from "@/components/SourceDrawer";
 import { Button, EmptyState, KBIcon, Spinner } from "@/components/ui";
 
@@ -44,6 +46,8 @@ interface Message {
   content: string;
   question?: string;
   query?: string;
+  thinking?: boolean;
+  feedback?: Feedback | null;
   gate?: "similarity" | "rerank";
   phase?: "retrieving" | "generating" | "done" | "error";
   retrieved?: RetrievedChunk[];
@@ -180,6 +184,7 @@ function Chat() {
               query: ev.query,
               gate: ev.gate,
             }));
+          else if (ev.type === "thinking") update(kbId, aid, () => ({ thinking: true }));
           else if (ev.type === "token") update(kbId, aid, (m) => ({ content: m.content + ev.text }));
           else if (ev.type === "done")
             update(kbId, aid, () => ({
@@ -287,6 +292,7 @@ function Chat() {
             if (c) setSource(c);
           }}
           onSource={setSource}
+          onFeedback={(mid, f) => kbId && update(kbId, mid, () => ({ feedback: f }))}
         />
 
         <Composer disabled={!kb || kb.chunk_count === 0} busy={busy} onSend={send} onStop={stop} kbName={kb?.name} />
@@ -304,6 +310,7 @@ function MessageList({
   onAsk,
   onCite,
   onSource,
+  onFeedback,
 }: {
   kb?: KnowledgeBase;
   kbsLoaded: boolean;
@@ -311,6 +318,7 @@ function MessageList({
   onAsk: (q: string) => void;
   onCite: (m: Message, n: number) => void;
   onSource: (s: SourceRef) => void;
+  onFeedback: (messageId: string, f: Feedback | null) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const last = messages[messages.length - 1];
@@ -347,7 +355,13 @@ function MessageList({
               </div>
             </div>
           ) : (
-            <AssistantMessage key={m.id} m={m} onCite={(n) => onCite(m, n)} onSource={onSource} />
+            <AssistantMessage
+              key={m.id}
+              m={m}
+              onCite={(n) => onCite(m, n)}
+              onSource={onSource}
+              onFeedback={(f) => onFeedback(m.id, f)}
+            />
           ),
         )}
         <div ref={endRef} />
@@ -414,7 +428,9 @@ function PipelineSteps({ m }: { m: Message }) {
     {
       label:
         m.phase === "generating"
-          ? "正在生成回答"
+          ? m.thinking && !m.content
+            ? "模型思考中…"
+            : "正在生成回答"
           : m.status === "no_context"
             ? "无相关资料，跳过生成"
             : m.phase === "done"
@@ -463,7 +479,17 @@ function PipelineSteps({ m }: { m: Message }) {
   );
 }
 
-function AssistantMessage({ m, onCite, onSource }: { m: Message; onCite: (n: number) => void; onSource: (s: SourceRef) => void }) {
+function AssistantMessage({
+  m,
+  onCite,
+  onSource,
+  onFeedback,
+}: {
+  m: Message;
+  onCite: (n: number) => void;
+  onSource: (s: SourceRef) => void;
+  onFeedback: (f: Feedback | null) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const done = m.phase === "done";
   const valid = done ? new Set(m.citations?.map((c) => c.index)) : undefined;
@@ -519,6 +545,7 @@ function AssistantMessage({ m, onCite, onSource }: { m: Message; onCite: (n: num
 
         {(done || m.phase === "error") && m.queryId && (
           <div className="mt-3 flex items-center gap-1 text-[12px] text-zinc-400">
+            {done && <FeedbackBar queryId={m.queryId} value={m.feedback} onChange={onFeedback} />}
             <Link
               href={`/retrievals/${m.queryId}`}
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-zinc-100 hover:text-zinc-700"

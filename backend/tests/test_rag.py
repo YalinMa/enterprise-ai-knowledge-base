@@ -198,3 +198,42 @@ def test_eval_case_and_metrics():
     assert m["hit_rate"] == 0.5 and m["mrr"] == 0.5 and m["refusal_accuracy"] == 1.0
     assert m["by_category"]["直接问法"] == {"total": 2, "passed": 1}
     assert len(load_dataset("demo")["cases"]) >= 20
+
+
+# ---------------- v0.3：反馈 / 知识洞察 / 条件改写 ----------------
+
+def test_needs_rewrite_rules():
+    from app.rag.query_rewrite import needs_rewrite
+    h = [{"role": "user", "content": "普通员工住宿标准？"}]
+    assert needs_rewrite("那总监呢？", h) and needs_rewrite("这个要发票吗？", h)
+    assert not needs_rewrite("试用期员工可以请事假吗？", h)   # 完整问题不改写，省一次 LLM 调用
+    assert not needs_rewrite("那总监呢？", [])                 # 没有历史不改写
+
+
+def test_feedback_and_insights_offline():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with TestClient(app) as c:
+        kb_id = _kb_with(c, ["员工报销制度.md"])
+        ids = []
+        for q in ["出差住宿标准是多少", "公司班车几点发车？", "班车路线在哪里查？", "公积金比例是多少？"]:
+            ids.append(c.post("/api/chat", json={"kb_id": kb_id, "question": q, "stream": False}).json()["query_id"])
+
+        # 点踩 + 原因；差评筛选；转成评测题
+        r = c.put(f"/api/retrievals/{ids[0]}/feedback", json={"rating": -1, "reasons": ["答案错误", "不存在的原因"]})
+        assert r.json()["feedback"]["reasons"] == ["答案错误"]
+        assert [x["id"] for x in c.get("/api/retrievals?feedback=down").json()] == [ids[0]]
+        assert c.post(f"/api/retrievals/{ids[0]}/to-eval", json={"expected_docs": []}).status_code == 400
+        assert c.post(f"/api/retrievals/{ids[0]}/to-eval",
+                      json={"expected_docs": ["员工报销制度.md"], "expected_keywords": ["500"]}).status_code == 201
+        assert any(d["id"] == "feedback" for d in c.get("/api/evals/datasets").json())
+
+        ov = c.get(f"/api/insights?kb_id={kb_id}").json()
+        assert ov["total"] == 4 and ov["downvotes"] == 1 and ov["trend"][-1]["total"] == 4
+        assert ov["doc_usage"][0]["filename"] == "员工报销制度.md"
+
+        gaps = c.post(f"/api/insights/gaps?kb_id={kb_id}").json()
+        assert gaps["problem_count"] >= 1
+        assert sum(g["count"] for g in gaps["gaps"]) == gaps["problem_count"]  # 每个问题都归入某一类
+        assert all(g["last_at"].endswith("+00:00") for g in gaps["gaps"])     # 时间带时区

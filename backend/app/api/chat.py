@@ -3,6 +3,7 @@
 import json
 import shutil
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -10,13 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import PROJECT_DIR, get_settings
-from app.db import Document, KnowledgeBase, QueryLog, get_db
+from app.db import Document, EvalCaseRow, KnowledgeBase, QueryLog, get_db
 from app.providers import describe_providers, get_embedder, get_llm
 from app.rag.ingest import ingest_document
 from app.rag.parsers import SUPPORTED_TYPES, detect_type
 from app.rag.pipeline import RAGOptions, answer_stream
 from app.rag.prompts import SYSTEM_PROMPT
-from app.schemas import ChatRequest, QueryLogOut, QueryLogSummary
+from app.schemas import (FEEDBACK_REASONS, ChatRequest, FeedbackIn, QueryLogOut, QueryLogSummary,
+                         ToEvalCase)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -50,14 +52,60 @@ def chat(body: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/retrievals", response_model=list[QueryLogSummary])
-def list_retrievals(kb_id: int | None = None, source: str = "chat", limit: int = 100,
-                    db: Session = Depends(get_db)):
+def list_retrievals(kb_id: int | None = None, source: str = "chat", feedback: str | None = None,
+                    limit: int = 100, db: Session = Depends(get_db)):
     q = select(QueryLog).order_by(QueryLog.id.desc()).limit(min(limit, 500))
     if kb_id:
         q = q.where(QueryLog.kb_id == kb_id)
     if source != "all":
         q = q.where(QueryLog.source == source)
-    return db.scalars(q).all()
+    rows = db.scalars(q).all()
+    if feedback in ("up", "down"):  # JSON 字段在 Python 侧过滤，演示规模足够
+        want = 1 if feedback == "up" else -1
+        rows = [r for r in rows if (r.feedback or {}).get("rating") == want]
+    return rows
+
+
+@router.put("/retrievals/{log_id}/feedback", response_model=QueryLogSummary)
+def set_feedback(log_id: int, body: FeedbackIn, db: Session = Depends(get_db)):
+    log = db.get(QueryLog, log_id)
+    if log is None:
+        raise HTTPException(404, "检索记录不存在")
+    log.feedback = None if body.rating == 0 else {
+        "rating": body.rating,
+        "reasons": [r for r in body.reasons if r in FEEDBACK_REASONS],
+        "comment": body.comment.strip(),
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    db.commit()
+    return log
+
+
+@router.post("/retrievals/{log_id}/to-eval", status_code=201)
+def to_eval_case(log_id: int, body: ToEvalCase, db: Session = Depends(get_db)):
+    """把一条（通常是差评的）问答沉淀为评测题：人工补上标准答案，之后每次评测都会覆盖它。"""
+    log = db.get(QueryLog, log_id)
+    if log is None:
+        raise HTTPException(404, "检索记录不存在")
+    if not body.should_refuse and not body.expected_docs:
+        raise HTTPException(400, "请至少选择一个「答案所在文档」，或标记为应拒答")
+    history = []
+    for m in (log.prompt or [])[1:-1]:  # prompt 里夹着的就是当时的对话历史
+        history.append({"role": m["role"], "content": m["content"]})
+    row = EvalCaseRow(dataset="feedback", query_log_id=log.id, data={
+        "id": f"f{log.id}", "category": body.category, "question": log.question,
+        "history": history, "expected_docs": body.expected_docs,
+        "expected_keywords": [k.strip() for k in body.expected_keywords if k.strip()],
+        "should_refuse": body.should_refuse,
+    })
+    db.add(row)
+    db.commit()
+    return {"id": row.id, "case": row.data}
+
+
+@router.get("/feedback/reasons")
+def feedback_reasons():
+    return FEEDBACK_REASONS
 
 
 @router.get("/retrievals/{log_id}", response_model=QueryLogOut)

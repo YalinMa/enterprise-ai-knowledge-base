@@ -204,6 +204,8 @@ function CreateEvalModal({ open, onClose, onCreated }: { open: boolean; onClose:
   // 未手动选择时，默认选名称含 Demo 的知识库
   const kbId = pickedKb ?? (kbs?.find((k) => k.name.includes("Demo")) ?? kbs?.[0])?.id ?? null;
   const [mode, setMode] = useState<"retrieval" | "full">("retrieval");
+  const { data: datasets } = useSWR<EvalDataset[]>(open ? "/api/evals/datasets" : null, fetcher);
+  const [dataset, setDataset] = useState("demo");
   const [rs, setRs] = useState<RetrievalSettings>({ retrieval_mode: "hybrid", rerank: true, query_rewrite: true });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -213,7 +215,7 @@ function CreateEvalModal({ open, onClose, onCreated }: { open: boolean; onClose:
     setLoading(true);
     setErr("");
     try {
-      const run = await api.createEval({ kb_id: kbId, dataset: "demo", mode, top_k: 5, ...rs, rerank: rs.rerank && rerankAvailable });
+      const run = await api.createEval({ kb_id: kbId, dataset, mode, top_k: 5, ...rs, rerank: rs.rerank && rerankAvailable });
       onClose();
       onCreated(run);
     } catch (e) {
@@ -257,6 +259,22 @@ function CreateEvalModal({ open, onClose, onCreated }: { open: boolean; onClose:
           </select>
           <div className="mt-1 text-[11.5px] text-zinc-400">评测集基于 demo-data 的 7 份文件，请选择包含这些文件的知识库</div>
         </label>
+        {datasets && datasets.length > 1 && (
+          <label className="block">
+            <div className="mb-1.5 font-medium text-zinc-700">评测集</div>
+            <select
+              value={dataset}
+              onChange={(e) => setDataset(e.target.value)}
+              className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2.5 outline-none focus:border-brand-500"
+            >
+              {datasets.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}（{d.count} 题）
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div>
           <div className="mb-1.5 font-medium text-zinc-700">评测模式</div>
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-0.5">

@@ -22,6 +22,7 @@ class EvalCreate(BaseModel):
     rerank: bool = True
     query_rewrite: bool = True
     top_k: int = Field(default=5, ge=1, le=20)
+    llm_model: str | None = Field(default=None, max_length=100)  # 覆盖生成模型，用于模型选型对比
 
 
 class EvalSummary(ORM):
@@ -70,7 +71,9 @@ def create_run(body: EvalCreate, db: Session = Depends(get_db)):
         "query_rewrite": body.query_rewrite,
         "top_k": body.top_k,
         "embedding": prov["embedding"]["signature"],
-        "llm": f'{prov["llm"]["provider"]}:{prov["llm"]["model"]}',
+        "llm": f'{prov["llm"]["provider"]}:{body.llm_model or prov["llm"]["model"]}',
+        "llm_model": body.llm_model,
+        "rewrite_llm": prov["llm"]["rewrite_model"],
         "reranker": prov["rerank"]["model"],
         "chunk_size": s.chunk_size,
     }

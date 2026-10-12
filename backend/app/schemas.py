@@ -100,6 +100,7 @@ class QueryLogSummary(ORM):
     status: str
     answer: str
     source: str = "chat"
+    feedback: dict | None = None
     created_at: UTCDateTime
     timings: dict
     citations: list
@@ -111,3 +112,19 @@ class QueryLogOut(QueryLogSummary):
     prompt: list
     params: dict
     error: str | None
+
+
+FEEDBACK_REASONS = ["答案错误", "引用不对", "没回答到点上", "不该拒答", "信息过时", "其他"]
+
+
+class FeedbackIn(BaseModel):
+    rating: int = Field(ge=-1, le=1)          # 1 赞 / -1 踩 / 0 取消
+    reasons: list[str] = []
+    comment: str = Field(default="", max_length=500)
+
+
+class ToEvalCase(BaseModel):
+    expected_docs: list[str] = []
+    expected_keywords: list[str] = []
+    should_refuse: bool = False
+    category: str = "用户反馈"

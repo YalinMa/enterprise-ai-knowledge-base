@@ -5,7 +5,22 @@
 没有历史、或使用 Mock LLM 时直接返回原问题。
 """
 
+import re
+
 from app.providers import LLMProvider
+
+# 追问的典型特征：以承接词开头，或含指代词，或很短（省略了主语 / 对象）
+_FOLLOWUP_START = re.compile(r"^(那|那么|那如果|如果是|还有|另外|再问|然后|所以|它|他|她|这|这个|那个|上面|刚才|同样|其中)")
+_REFERENCE = re.compile(r"(它|他们|她们|这个|那个|这些|那些|上述|上面|刚才|前面|同样|这种|那种|该制度|这条|那条)")
+
+
+def needs_rewrite(question: str, history: list[dict]) -> bool:
+    """规则先判断要不要改写：完整的问题直接检索，省掉一次 LLM 调用（约 0.5–2 秒）。"""
+    if not history:
+        return False
+    q = question.strip()
+    return len(q) <= 10 or bool(_FOLLOWUP_START.match(q)) or bool(_REFERENCE.search(q))
+
 
 REWRITE_PROMPT = """你是检索查询改写器。根据对话历史，把用户最新的问题改写成一个不依赖上下文、可以独立用于知识库检索的完整问题。
 

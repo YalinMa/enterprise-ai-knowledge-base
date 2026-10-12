@@ -14,6 +14,11 @@ from collections.abc import Iterator
 from openai import BadRequestError, OpenAI
 
 
+class Thinking(str):
+    """推理模型（如 deepseek-flash）输出正文前的「思考」片段。stream 里以这个类型产出，
+    调用方据此提示「模型思考中」，不计入答案。"""
+
+
 class LLMProvider(ABC):
     provider: str
     model: str
@@ -21,10 +26,11 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def stream(self, messages: list[dict], context: list[dict] | None = None) -> Iterator[str]:
-        """流式生成。context 是本次检索到的资料，真实模型已经在 prompt 里看到了，只有 Mock 用它。"""
+        """流式生成正文片段；推理模型的思考过程以 Thinking 类型产出。
+        context 是本次检索到的资料，真实模型已经在 prompt 里看到了，只有 Mock 用它。"""
 
     def complete(self, messages: list[dict], context: list[dict] | None = None) -> str:
-        return "".join(self.stream(messages, context))
+        return "".join(p for p in self.stream(messages, context) if not isinstance(p, Thinking))
 
 
 class OpenAICompatLLM(LLMProvider):
@@ -56,7 +62,12 @@ class OpenAICompatLLM(LLMProvider):
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
-            if delta and delta.content:
+            if delta is None:
+                continue
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning:
+                yield Thinking(reasoning)
+            if delta.content:
                 yield delta.content
 
 

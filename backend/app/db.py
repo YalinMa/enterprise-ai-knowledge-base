@@ -100,6 +100,19 @@ class QueryLog(Base):
     status: Mapped[str] = mapped_column(String(20), default="ok")  # ok / no_context / error
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="chat")  # chat / eval
+    # 用户反馈：{"rating": 1 | -1, "reasons": [...], "comment": "...", "at": iso}
+    feedback: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvalCaseRow(Base):
+    """从用户差评沉淀下来的评测题（数据集名 feedback），与仓库里的 JSON 评测集合并使用。"""
+    __tablename__ = "eval_cases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dataset: Mapped[str] = mapped_column(String(100), index=True, default="feedback")
+    query_log_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    data: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -140,7 +153,7 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 # 轻量迁移：create_all 不会给已存在的表加列，这里补上新版本新增的列
 _ADDED_COLUMNS = {
-    "query_logs": {"source": "VARCHAR(20) NOT NULL DEFAULT 'chat'"},
+    "query_logs": {"source": "VARCHAR(20) NOT NULL DEFAULT 'chat'", "feedback": "JSON"},
 }
 
 
