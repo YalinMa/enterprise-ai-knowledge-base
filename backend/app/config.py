@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     rerank_provider: str = "none"       # qwen / none
     rerank_api_key: str = ""            # 不填时，若 Embedding 也用 qwen 则复用其 Key
     rerank_model: str = "gte-rerank-v2"
-    rerank_min_score: float = 0.15      # 开启 Rerank 后，拒答闸门改用重排分数（基于评测集标定）
+    rerank_min_score: float = 0.22      # 开启 Rerank 后，拒答闸门改用重排分数（在扩展评测集的调参集上标定）
     rerank_keep_similarity: float = 0.55  # 重排分数偏低但余弦相似度很高的切片也放行（口语化问法）
 
     # ---- RAG 参数 ----

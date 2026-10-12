@@ -10,6 +10,9 @@ export function ConfigBadges({ run }: { run: Pick<EvalRun, "config" | "mode"> })
       {c.rerank && <Badge tone="blue">Rerank</Badge>}
       {c.query_rewrite && <Badge tone="amber">追问改写</Badge>}
       <Badge tone={run.mode === "full" ? "green" : "zinc"}>{run.mode === "full" ? "完整问答" : "仅检索"}</Badge>
+      {c.split === "dev" && <Badge tone="zinc">调参集</Badge>}
+      {c.split === "test" && <Badge tone="red">测试集</Badge>}
+      {c.llm_model && <Badge tone="zinc">{c.llm_model}</Badge>}
     </div>
   );
 }

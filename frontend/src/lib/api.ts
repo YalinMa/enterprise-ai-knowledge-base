@@ -27,6 +27,7 @@ export interface DocumentItem {
   page_count: number | null;
   char_count: number;
   chunk_count: number;
+  lifecycle?: "active" | "deprecated";
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +72,7 @@ export interface RetrievedChunk {
   bm25_score?: number | null;
   rrf_score?: number | null;
   rerank_score?: number | null;
+  deprecated?: boolean;
 }
 
 export interface Citation {
@@ -264,6 +266,7 @@ export interface EvalRun {
     llm_model?: string | null;
     reranker: string | null;
     chunk_size: number;
+    split?: "all" | "dev" | "test";
   };
   status: "running" | "done" | "failed";
   progress: number;
@@ -281,6 +284,7 @@ export interface EvalDataset {
   description: string;
   count: number;
   categories: Record<string, number>;
+  splits?: Record<string, number> | null;
 }
 
 // ---------------- 请求封装 ----------------
@@ -326,6 +330,8 @@ export const api = {
     return request<DocumentItem[]>(`/api/knowledge-bases/${kbId}/documents`, { method: "POST", body: form });
   },
   deleteDocument: (id: number) => request<void>(`/api/documents/${id}`, { method: "DELETE" }),
+  setLifecycle: (id: number, lifecycle: "active" | "deprecated") =>
+    request<DocumentItem>(`/api/documents/${id}`, json("PATCH", { lifecycle })),
   reparseDocument: (id: number) => request<DocumentItem>(`/api/documents/${id}/reparse`, json("POST")),
   demoFiles: () => request<string[]>("/api/demo/files"),
   /** 取回示例文件并封装成 File，之后与用户手动选择的文件走同一个上传接口 */
@@ -336,7 +342,9 @@ export const api = {
   },
   seedDemo: () => request<{ kb_id: number; added: string[] }>("/api/demo/seed", json("POST")),
   createEval: (
-    body: { kb_id: number; dataset: string; mode: string; llm_model?: string | null } & RetrievalSettings & { top_k: number },
+    body: { kb_id: number; dataset: string; split?: string; mode: string; llm_model?: string | null } & RetrievalSettings & {
+      top_k: number;
+    },
   ) =>
     request<EvalRun>("/api/evals", json("POST", body)),
   deleteEval: (id: number) => request<void>(`/api/evals/${id}`, { method: "DELETE" }),

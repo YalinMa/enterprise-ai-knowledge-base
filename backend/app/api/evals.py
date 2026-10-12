@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import EvalRun, KnowledgeBase, get_db
-from app.eval.runner import list_datasets, load_dataset, start_run
+from app.eval.runner import list_datasets, load_cases, start_run
 from app.providers import describe_providers, get_reranker
 from app.schemas import ORM, UTCDateTime
 
@@ -23,6 +23,7 @@ class EvalCreate(BaseModel):
     query_rewrite: bool = True
     top_k: int = Field(default=5, ge=1, le=20)
     llm_model: str | None = Field(default=None, max_length=100)  # 覆盖生成模型，用于模型选型对比
+    split: str = Field(default="all", pattern="^(all|dev|test)$")  # 调参集 / 测试集
 
 
 class EvalSummary(ORM):
@@ -61,7 +62,9 @@ def create_run(body: EvalCreate, db: Session = Depends(get_db)):
     if kb is None:
         raise HTTPException(404, "知识库不存在")
     try:
-        cases = load_dataset(body.dataset)["cases"]
+        cases = load_cases(body.dataset, body.split)
+        if not cases:
+            raise ValueError(f"评测集 {body.dataset} 的 {body.split} 部分没有题目")
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
     s, prov = get_settings(), describe_providers()
@@ -76,6 +79,7 @@ def create_run(body: EvalCreate, db: Session = Depends(get_db)):
         "rewrite_llm": prov["llm"]["rewrite_model"],
         "reranker": prov["rerank"]["model"],
         "chunk_size": s.chunk_size,
+        "split": body.split,
     }
     run = EvalRun(kb_id=kb.id, kb_name=kb.name, dataset=body.dataset, mode=body.mode,
                   config=config, total=len(cases))

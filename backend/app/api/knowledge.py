@@ -14,8 +14,8 @@ from app.db import Chunk, Document, KnowledgeBase, QueryLog, get_db, kb_counts, 
 from app.rag import vectorstore
 from app.rag.ingest import ingest_document
 from app.rag.parsers import SUPPORTED_TYPES, detect_type
-from app.schemas import (ChunkDetail, ChunkOut, DocumentOut, KBCreate, KBOut, KBUpdate,
-                         StatsOut)
+from app.schemas import (ChunkDetail, ChunkOut, DocumentOut, DocumentUpdate, KBCreate, KBOut,
+                         KBUpdate, StatsOut)
 
 router = APIRouter(prefix="/api", tags=["knowledge"])
 
@@ -144,6 +144,16 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
     kb.updated_at = utcnow()
     db.delete(doc)
     db.commit()
+
+
+@router.patch("/documents/{doc_id}", response_model=DocumentOut)
+def update_document(doc_id: int, body: DocumentUpdate, db: Session = Depends(get_db)):
+    """切换文档生命周期（生效 / 已废止）。已废止文档默认不参与检索。"""
+    doc = _get_doc(db, doc_id)
+    doc.lifecycle = body.lifecycle
+    doc.updated_at = utcnow()  # 让 BM25 索引按新状态重建
+    db.commit()
+    return doc
 
 
 @router.post("/documents/{doc_id}/reparse", response_model=DocumentOut)

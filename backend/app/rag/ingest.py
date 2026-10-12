@@ -4,6 +4,7 @@
 """
 
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -18,6 +19,13 @@ from app.rag.cleaning import clean_text
 from app.rag.parsers import ParsedSection, parse_file
 
 log = logging.getLogger("ingest")
+
+# 文档开头出现这些字样时，自动标记为「已废止」（用户也可以在知识库页面手动切换）
+_DEPRECATED = re.compile(r"(状态[：:]\s*\**\s*已废止|已于.{0,20}废止|[（(·]\s*已废止\s*[）)]?)")
+
+
+def detect_deprecated(filename: str, head_text: str) -> bool:
+    return bool(_DEPRECATED.search(filename) or _DEPRECATED.search(head_text[:800]))
 
 
 def _set_status(db, doc: Document, status: str, **fields) -> None:
@@ -49,6 +57,8 @@ def ingest_document(document_id: int) -> None:
         pieces = chunk_document(parsed, settings.chunk_size, settings.chunk_overlap)
         if not pieces:
             raise ValueError("切片结果为空")
+        if detect_deprecated(doc.filename, parsed.sections[0].text if parsed.sections else ""):
+            doc.lifecycle = "deprecated"
         _set_status(db, doc, "embedding", page_count=parsed.page_count, char_count=char_count)
 
         # 4. Embedding

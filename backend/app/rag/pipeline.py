@@ -23,6 +23,9 @@ from app.rag.retriever import RetrievalOptions, RetrievalResult, Retriever
 
 log = logging.getLogger("rag")
 
+# 问题明确涉及历史版本时，才召回已废止文档
+_HISTORY = re.compile(r"(旧版|老版|以前|之前|历史|废止|过去|原来|\d{4}\s*版|\d{4}\s*年.{0,4}(制度|规定|版本|标准))")
+
 
 def _ms(t: float) -> int:
     return round((time.perf_counter() - t) * 1000)
@@ -64,6 +67,7 @@ def retrieve(kb_id: int, question: str, history: list[dict], opt: RAGOptions
         timings["rewrite_ms"] = _ms(t)
     min_score = settings.min_score if settings.min_score is not None else embedder.default_min_score
     ropt = RetrievalOptions(top_k=opt.top_k, mode=opt.retrieval_mode, rerank=opt.rerank,
+                            include_deprecated=bool(_HISTORY.search(question) or _HISTORY.search(query)),
                             candidate_k=settings.candidate_k, rrf_k=settings.rrf_k,
                             min_score=min_score, rerank_min_score=settings.rerank_min_score,
                             keep_similarity=settings.rerank_keep_similarity)

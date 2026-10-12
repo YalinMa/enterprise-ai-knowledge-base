@@ -43,15 +43,23 @@ export default function EvalsPage() {
   const { data: datasets } = useSWR<EvalDataset[]>("/api/evals/datasets", fetcher);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<EvalRun | null>(null);
+  const [pickedDs, setPickedDs] = useState<string | null>(null);
 
-  const done = (runs ?? []).filter((r) => r.status === "done");
-  const best = (key: keyof EvalMetrics, higher: boolean) => {
-    const vals = done.map((r) => r.metrics[key]).filter((v): v is number => typeof v === "number");
-    if (!vals.length) return null;
+  // 不同评测集 / 题目范围 / 模式的结果不可比，按评测集分页展示
+  const dsIds = datasets?.map((d) => d.id) ?? [];
+  const current = pickedDs ?? (dsIds.includes("extended") ? "extended" : dsIds[0]) ?? "demo";
+  const ds = datasets?.find((d) => d.id === current);
+  const shown = (runs ?? []).filter((r) => r.dataset === current);
+  const group = (r: EvalRun) => `${r.mode}|${r.config.split ?? "all"}`;
+  const best = (r: EvalRun, key: keyof EvalMetrics, higher: boolean) => {
+    const vals = shown
+      .filter((x) => x.status === "done" && group(x) === group(r))
+      .map((x) => x.metrics[key])
+      .filter((v): v is number => typeof v === "number");
+    if (vals.length < 2) return null;
     return higher ? Math.max(...vals) : Math.min(...vals);
   };
-  const cols = COLUMNS.filter((c) => (runs ?? []).some((r) => r.metrics[c.key] != null));
-  const ds = datasets?.[0];
+  const cols = COLUMNS.filter((c) => shown.some((r) => r.metrics[c.key] != null));
 
   return (
     <PageContainer>
@@ -65,11 +73,32 @@ export default function EvalsPage() {
         }
       />
 
+      {datasets && datasets.length > 1 && (
+        <div className="mb-3 flex gap-1 rounded-lg bg-zinc-100 p-0.5 text-[12.5px]" style={{ width: "fit-content" }}>
+          {datasets.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => setPickedDs(d.id)}
+              className={clsx("rounded-md px-3 py-1", current === d.id ? "bg-white font-medium shadow-sm" : "text-zinc-500")}
+            >
+              {d.name}
+              <span className="ml-1 text-zinc-400">{(runs ?? []).filter((r) => r.dataset === d.id).length}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {ds && (
         <Card className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 p-5">
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-semibold text-zinc-900">
               评测集：{ds.name} <span className="font-normal text-zinc-400">· {ds.count} 题</span>
+              {ds.splits && Object.keys(ds.splits).length > 0 && (
+                <span className="font-normal text-zinc-400">
+                  {" "}
+                  （调参集 {ds.splits.dev ?? 0} · 测试集 {ds.splits.test ?? 0}）
+                </span>
+              )}
             </div>
             <div className="mt-1 text-[12.5px] leading-relaxed text-zinc-500">{ds.description}</div>
           </div>
@@ -88,7 +117,7 @@ export default function EvalsPage() {
           <div className="flex justify-center py-16">
             <Spinner />
           </div>
-        ) : runs.length === 0 ? (
+        ) : shown.length === 0 ? (
           <EmptyState
             icon={FlaskConical}
             title="还没有评测记录"
@@ -115,7 +144,7 @@ export default function EvalsPage() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((r) => (
+              {shown.map((r) => (
                 <tr
                   key={r.id}
                   onClick={() => router.push(`/evals/${r.id}`)}
@@ -139,7 +168,7 @@ export default function EvalsPage() {
                   ) : (
                     cols.map((c) => {
                       const v = r.metrics[c.key];
-                      const isBest = typeof v === "number" && done.length > 1 && v === best(c.key, c.higher);
+                      const isBest = typeof v === "number" && v === best(r, c.key, c.higher);
                       return (
                         <td
                           key={c.key}
@@ -169,7 +198,11 @@ export default function EvalsPage() {
           </table>
         )}
       </Card>
-      {done.length > 1 && <div className="mt-2 text-[12px] text-zinc-400">绿色加粗为每列最优值 · 鼠标悬停列名查看指标定义</div>}
+      {shown.length > 1 && (
+        <div className="mt-2 text-[12px] text-zinc-400">
+          绿色加粗为同一题目范围、同一模式下的最优值 · 鼠标悬停列名查看指标定义
+        </div>
+      )}
 
       <CreateEvalModal
         open={creating}
@@ -200,12 +233,15 @@ function CreateEvalModal({ open, onClose, onCreated }: { open: boolean; onClose:
   const { data: kbs } = useSWR<KnowledgeBase[]>(open ? "/api/knowledge-bases" : null, fetcher);
   const { data: cfg } = useSWR<SystemConfig>("/api/system/config", fetcher);
   const rerankAvailable = cfg?.providers.rerank.enabled ?? false;
+  const [dataset, setDataset] = useState("demo");
   const [pickedKb, setKbId] = useState<number | null>(null);
   // 未手动选择时，默认选名称含 Demo 的知识库
-  const kbId = pickedKb ?? (kbs?.find((k) => k.name.includes("Demo")) ?? kbs?.[0])?.id ?? null;
+  const kbId =
+    pickedKb ?? (kbs?.find((k) => k.name.includes(dataset === "extended" ? "扩展版" : "Demo")) ?? kbs?.[0])?.id ?? null;
   const [mode, setMode] = useState<"retrieval" | "full">("retrieval");
   const { data: datasets } = useSWR<EvalDataset[]>(open ? "/api/evals/datasets" : null, fetcher);
-  const [dataset, setDataset] = useState("demo");
+  const [split, setSplit] = useState<"all" | "dev" | "test">("all");
+  const splits = datasets?.find((d) => d.id === dataset)?.splits;
   const [rs, setRs] = useState<RetrievalSettings>({ retrieval_mode: "hybrid", rerank: true, query_rewrite: true });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -215,7 +251,7 @@ function CreateEvalModal({ open, onClose, onCreated }: { open: boolean; onClose:
     setLoading(true);
     setErr("");
     try {
-      const run = await api.createEval({ kb_id: kbId, dataset, mode, top_k: 5, ...rs, rerank: rs.rerank && rerankAvailable });
+      const run = await api.createEval({ kb_id: kbId, dataset, split: splits && Object.keys(splits).length ? split : "all", mode, top_k: 5, ...rs, rerank: rs.rerank && rerankAvailable });
       onClose();
       onCreated(run);
     } catch (e) {
@@ -264,7 +300,10 @@ function CreateEvalModal({ open, onClose, onCreated }: { open: boolean; onClose:
             <div className="mb-1.5 font-medium text-zinc-700">评测集</div>
             <select
               value={dataset}
-              onChange={(e) => setDataset(e.target.value)}
+              onChange={(e) => {
+                setDataset(e.target.value);
+                setSplit("all");
+              }}
               className="h-9 w-full rounded-lg border border-zinc-200 bg-white px-2.5 outline-none focus:border-brand-500"
             >
               {datasets.map((d) => (
@@ -274,6 +313,25 @@ function CreateEvalModal({ open, onClose, onCreated }: { open: boolean; onClose:
               ))}
             </select>
           </label>
+        )}
+        {splits && Object.keys(splits).length > 0 && (
+          <div>
+            <div className="mb-1.5 font-medium text-zinc-700">题目范围</div>
+            <div className="grid grid-cols-3 gap-1 rounded-lg bg-zinc-100 p-0.5">
+              {(
+                [
+                  ["all", `全部 ${(splits.dev ?? 0) + (splits.test ?? 0)}`],
+                  ["dev", `调参集 ${splits.dev ?? 0}`],
+                  ["test", `测试集 ${splits.test ?? 0}`],
+                ] as const
+              ).map(([v, label]) => (
+                <button key={v} className={seg(split === v)} onClick={() => setSplit(v)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-1 text-[11.5px] text-zinc-400">调参只看调参集；测试集留到最后检验，避免「拿考题复习」</div>
+          </div>
         )}
         <div>
           <div className="mb-1.5 font-medium text-zinc-700">评测模式</div>

@@ -65,16 +65,21 @@ def test_clean_text_collapses_whitespace():
 
 # ---------------- Parsing + Chunking ----------------
 
-@pytest.mark.parametrize("name", sorted(p.name for p in DEMO.iterdir()))
-def test_demo_files_parse_and_chunk(name):
+ALL_DEMO_FILES = sorted([p for p in DEMO.iterdir() if p.is_file()] +
+                        [p for p in (DEMO / "extended").iterdir() if p.is_file()])
+
+
+@pytest.mark.parametrize("path", ALL_DEMO_FILES, ids=lambda p: p.name)
+def test_demo_files_parse_and_chunk(path):
+    name = path.name
     ftype = name.rsplit(".", 1)[-1]
-    doc = parse_file(DEMO / name, ftype)
+    doc = parse_file(path, ftype)
     doc.sections = [ParsedSection(clean_text(s.text, ftype == "pdf"), s.page) for s in doc.sections]
     chunks = chunk_document(doc, 500, 80)
     assert chunks, f"{name} 没有切出内容"
     assert all(len(c.content) <= 500 for c in chunks)
     if ftype == "pdf":
-        assert {c.page for c in chunks} == {1, 2, 3}  # 页码保留，引用可以定位到页
+        assert {c.page for c in chunks} == set(range(1, doc.page_count + 1))  # 每页都有切片，引用可定位到页
     if ftype in ("md", "docx"):
         assert any(c.section for c in chunks)       # 章节路径保留
 
@@ -237,3 +242,38 @@ def test_feedback_and_insights_offline():
         assert gaps["problem_count"] >= 1
         assert sum(g["count"] for g in gaps["gaps"]) == gaps["problem_count"]  # 每个问题都归入某一类
         assert all(g["last_at"].endswith("+00:00") for g in gaps["gaps"])     # 时间带时区
+
+
+# ---------------- v0.4：文档生命周期（已废止文档） ----------------
+
+def test_detect_deprecated():
+    from app.rag.ingest import detect_deprecated
+    assert detect_deprecated("员工报销制度（2024版·已废止）.md", "")
+    assert detect_deprecated("a.md", "> 版本：V2.0 ｜ **状态：已废止**")
+    assert detect_deprecated("a.md", "本制度已于 2026年1月1日 废止")
+    assert not detect_deprecated("员工报销制度.md", "# 员工费用报销制度 生效日期：2026年1月1日")
+
+
+def test_deprecated_documents_excluded_unless_asked():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.rag.pipeline import RAGOptions, retrieve
+
+    with TestClient(app) as c:
+        kb_id = _kb_with(c, ["员工报销制度.md"])
+        old = "员工报销制度（2024版·已废止）.md"
+        r = c.post(f"/api/knowledge-bases/{kb_id}/documents",
+                   files=[("files", (old, (DEMO / "extended" / old).read_bytes()))]).json()
+        doc = c.get(f"/api/knowledge-bases/{kb_id}/documents").json()
+        assert next(d for d in doc if d["filename"] == old)["lifecycle"] == "deprecated"  # 自动识别
+
+        opt = RAGOptions.from_settings(retrieval_mode="hybrid", rerank=False, query_rewrite=False)
+        _, res, _ = retrieve(kb_id, "出差住宿标准是多少", [], opt)
+        assert all(ch.document_name != old for ch in res.chunks)          # 默认不召回
+        _, res, _ = retrieve(kb_id, "2024 版的住宿标准是多少", [], opt)
+        assert any(ch.document_name == old and ch.deprecated for ch in res.chunks)  # 问历史版本时召回
+
+        # 手动改回「生效」后正常参与检索
+        assert c.patch(f"/api/documents/{r[0]['id']}", json={"lifecycle": "active"}).json()["lifecycle"] == "active"
+        _, res, _ = retrieve(kb_id, "出差住宿标准是多少", [], opt)
+        assert any(ch.document_name == old for ch in res.chunks)

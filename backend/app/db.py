@@ -57,6 +57,8 @@ class Document(Base):
     char_count: Mapped[int] = mapped_column(Integer, default=0)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(50), default="upload")  # 预留：notion / feishu / web
+    # 文档生命周期：active 生效 / deprecated 已废止。已废止文档默认不参与检索，问历史版本时才召回
+    lifecycle: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow,
                                                  onupdate=utcnow)
@@ -154,6 +156,7 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 # 轻量迁移：create_all 不会给已存在的表加列，这里补上新版本新增的列
 _ADDED_COLUMNS = {
     "query_logs": {"source": "VARCHAR(20) NOT NULL DEFAULT 'chat'", "feedback": "JSON"},
+    "documents": {"lifecycle": "VARCHAR(20) NOT NULL DEFAULT 'active'"},
 }
 
 

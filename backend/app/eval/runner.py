@@ -10,7 +10,7 @@
 - Context Recall 关键事实出现在送入 LLM 的切片中的比例
 - 拒答准确率      该拒答的拒答了、不该拒答的没拒答，占全部题目的比例
 - 误拒率          能回答的题却被拒答的比例
-- 答案准确率      （full）答案包含全部关键事实的比例
+- 答案准确率      （full）答案包含全部关键事实、且不含任何「禁止关键词」（如旧版制度的数字）的比例
 - 引用命中率      （full）引用中包含正确文档的比例
 """
 
@@ -50,14 +50,26 @@ def list_datasets() -> list[dict]:
         cats: dict[str, int] = {}
         for c in d["cases"]:
             cats[c["category"]] = cats.get(c["category"], 0) + 1
+        splits: dict[str, int] = {}
+        for c in d["cases"]:
+            if "split" in c:
+                splits[c["split"]] = splits.get(c["split"], 0) + 1
         out.append({"id": p.stem, "name": d["name"], "description": d.get("description", ""),
-                    "count": len(d["cases"]), "categories": cats})
+                    "count": len(d["cases"]), "categories": cats, "splits": splits})
     fb = _feedback_cases()
     if fb:
         out.append({"id": FEEDBACK_DATASET, "name": "用户反馈评测集",
                     "description": "由用户差评沉淀的问题，补充标准答案后加入，用于防止同类问题复发（回归测试）。",
                     "count": len(fb), "categories": {"用户反馈": len(fb)}})
     return out
+
+
+def load_cases(name: str, split: str = "all") -> list[dict]:
+    """split：all / dev（调参集）/ test（测试集）。没有标注 split 的题目视为 dev。"""
+    cases = load_dataset(name)["cases"]
+    if split in ("dev", "test"):
+        cases = [c for c in cases if c.get("split", "dev") == split]
+    return cases
 
 
 def load_dataset(name: str) -> dict:
@@ -89,6 +101,7 @@ def run_case(kb_id: int, case: dict, opt: RAGOptions, mode: str) -> dict:
     history = case.get("history", [])
     expected = set(case.get("expected_docs", []))
     keywords = case.get("expected_keywords", [])
+    forbidden = case.get("forbidden_keywords", [])
     r = {"id": case["id"], "category": case["category"], "question": case["question"],
          "should_refuse": bool(case.get("should_refuse")), "expected_docs": sorted(expected)}
 
@@ -121,6 +134,8 @@ def run_case(kb_id: int, case: dict, opt: RAGOptions, mode: str) -> dict:
     if mode == "full":
         r["answer"] = answer
         r["answer_recall"] = round(_recall(keywords, answer), 3)
+        norm_answer = _norm(answer)
+        r["forbidden_hits"] = [k for k in forbidden if _norm(k) in norm_answer]
         r["citation_hit"] = any(c["document_name"] in expected for c in citations) if expected else None
 
     if r["should_refuse"]:
@@ -131,6 +146,8 @@ def run_case(kb_id: int, case: dict, opt: RAGOptions, mode: str) -> dict:
                                            else "误拒答：模型认为资料不足")
     elif rank is None:
         r["passed"], r["reason"] = False, "未召回正确文档"
+    elif mode == "full" and r["forbidden_hits"]:
+        r["passed"], r["reason"] = False, f"答案包含错误信息：{'、'.join(r['forbidden_hits'])}"
     elif mode == "full" and r["answer_recall"] < 1:
         r["passed"], r["reason"] = False, "答案缺少关键事实"
     elif mode == "retrieval" and r["context_recall"] < 1:
@@ -158,7 +175,8 @@ def compute_metrics(results: list[dict], mode: str) -> dict:
         "by_category": {},
     }
     if mode == "full":
-        m["answer_accuracy"] = mean([r["answer_recall"] == 1 and not r["refused"] for r in ans])
+        m["answer_accuracy"] = mean([r["answer_recall"] == 1 and not r["refused"] and not r.get("forbidden_hits")
+                                     for r in ans])
         m["citation_hit_rate"] = mean([bool(r["citation_hit"]) for r in ans])
     for cat in dict.fromkeys(r["category"] for r in results):
         rs = [r for r in results if r["category"] == cat]
@@ -170,7 +188,7 @@ def _execute(run_id: int) -> None:
     db = SessionLocal()
     try:
         run = db.get(EvalRun, run_id)
-        cases = load_dataset(run.dataset)["cases"]
+        cases = load_cases(run.dataset, run.config.get("split", "all"))
         cfg = run.config
         opt = RAGOptions.from_settings(top_k=cfg["top_k"], retrieval_mode=cfg["retrieval_mode"],
                                        rerank=cfg["rerank"], query_rewrite=cfg["query_rewrite"],

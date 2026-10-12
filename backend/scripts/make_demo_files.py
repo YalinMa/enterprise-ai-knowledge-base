@@ -38,7 +38,8 @@ PDF_PAGES = [
 ]
 
 
-def make_pdf(path: Path) -> None:
+def make_pdf_pages(path: Path, pages: list[tuple[str, list[str]]], doc_title: str) -> None:
+    """每个 (标题, 段落列表) 占一页。"""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.pdfbase import pdfmetrics
@@ -58,14 +59,18 @@ def make_pdf(path: Path) -> None:
     body = ParagraphStyle("b", fontName="CJK", fontSize=11, leading=19, spaceAfter=8,
                           wordWrap="CJK")
     story = []
-    for i, (heading, paras) in enumerate(PDF_PAGES):
+    for i, (heading, paras) in enumerate(pages):
         story.append(Paragraph(heading, title))
         for p in paras:
             story.append(Paragraph(p, body))
         story.append(Spacer(1, 12))
-        if i < len(PDF_PAGES) - 1:
+        if i < len(pages) - 1:
             story.append(PageBreak())
-    SimpleDocTemplate(str(path), pagesize=A4, title="星河优选商城 售后服务规则").build(story)
+    SimpleDocTemplate(str(path), pagesize=A4, title=doc_title).build(story)
+
+
+def make_pdf(path: Path) -> None:
+    make_pdf_pages(path, PDF_PAGES, "星河优选商城 售后服务规则")
 
 
 def make_docx(path: Path) -> None:

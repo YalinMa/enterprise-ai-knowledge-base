@@ -47,8 +47,13 @@ class DocumentOut(ORM):
     page_count: int | None
     char_count: int
     chunk_count: int
+    lifecycle: str = "active"
     created_at: UTCDateTime
     updated_at: UTCDateTime
+
+
+class DocumentUpdate(BaseModel):
+    lifecycle: str = Field(pattern="^(active|deprecated)$")
 
 
 class ChunkOut(ORM):

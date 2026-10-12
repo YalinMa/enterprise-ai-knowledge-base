@@ -29,7 +29,8 @@ class RetrievalOptions:
     candidate_k: int = 20
     rrf_k: int = 60
     min_score: float = 0.45         # 余弦相似度阈值（未重排时使用）
-    rerank_min_score: float = 0.15  # 重排分数阈值（重排时使用）
+    rerank_min_score: float = 0.22  # 重排分数阈值（重排时使用）
+    include_deprecated: bool = False  # 是否召回已废止文档（问历史版本时才打开）
     keep_similarity: float = 0.55   # 重排时，余弦相似度高于此值的切片同样放行
 
 
@@ -49,6 +50,7 @@ class RetrievedChunk:
     bm25_score: float | None = None
     rrf_score: float | None = None
     rerank_score: float | None = None
+    deprecated: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -83,13 +85,14 @@ class Retriever:
     def retrieve(self, kb_id: int, query: str, opt: RetrievalOptions) -> RetrievalResult:
         timings: dict[str, int] = {}
         n = max(opt.candidate_k, opt.top_k)
+        fetch = n + 10  # 多取一些，过滤掉已废止文档后仍有足够候选
 
         t = time.perf_counter()
         qvec = self.embedder.embed_query(query)
         timings["embed_ms"] = _ms(t)
 
         t = time.perf_counter()
-        vec_hits = vectorstore.query(kb_id, qvec, n)
+        vec_hits = vectorstore.query(kb_id, qvec, fetch)
         timings["search_ms"] = _ms(t)
         vector_rank = {h.chunk_id: i + 1 for i, h in enumerate(vec_hits)}
         similarity = {h.chunk_id: h.score for h in vec_hits}
@@ -98,7 +101,7 @@ class Retriever:
         bm25_score: dict[str, float] = {}
         if opt.mode == "hybrid":
             t = time.perf_counter()
-            for i, (cid, s) in enumerate(bm25.search(kb_id, query, n)):
+            for i, (cid, s) in enumerate(bm25.search(kb_id, query, fetch)):
                 bm25_rank[cid], bm25_score[cid] = i + 1, s
             timings["bm25_ms"] = _ms(t)
 
@@ -107,15 +110,16 @@ class Retriever:
         for ranks in (vector_rank, bm25_rank):
             for cid, r in ranks.items():
                 rrf[cid] = rrf.get(cid, 0.0) + 1.0 / (opt.rrf_k + r)
-        candidates = sorted(rrf, key=lambda c: -rrf[c])[:n]
+        ranked = sorted(rrf, key=lambda c: -rrf[c])
+        rows = self._load_chunks(ranked)
+        # 过滤已删除的切片；默认排除已废止文档，避免模型引用失效的规定
+        candidates = [c for c in ranked if c in rows
+                      and (opt.include_deprecated or not rows[c]["deprecated"])][:n]
 
         # 只被 BM25 召回的切片没有向量分数，取回向量补算余弦相似度，保证每个切片都能展示 Similarity
         missing = [c for c in candidates if c not in similarity]
         for cid, emb in vectorstore.get_embeddings(kb_id, missing).items():
             similarity[cid] = round(_cosine(qvec, emb), 4)
-
-        rows = self._load_chunks(candidates)
-        candidates = [c for c in candidates if c in rows]  # 防御：切片已被删除
 
         # ---- Rerank ----
         rerank: dict[str, float] = {}
@@ -155,10 +159,10 @@ class Retriever:
         try:
             res = db.execute(
                 select(Chunk.id, Chunk.content, Chunk.page, Chunk.section, Chunk.document_id,
-                       Document.filename)
+                       Document.filename, Document.lifecycle)
                 .join(Document, Document.id == Chunk.document_id).where(Chunk.id.in_(ids))
             ).all()
         finally:
             db.close()
         return {r[0]: {"content": r[1], "page": r[2], "section": r[3], "document_id": r[4],
-                       "document_name": r[5]} for r in res}
+                       "document_name": r[5], "deprecated": r[6] == "deprecated"} for r in res}

@@ -1,0 +1,1232 @@
+{
+ "name": "星河科技扩展评测集",
+ "description": "基于 30 份制度文件（demo-data + extended），新增版本冲突、适用范围、长文档、跨文档等难题。按题型分层拆为调参集（dev）和测试集（test）：调参只看调参集，测试集只在最后报告。",
+ "cases": [
+  {
+   "id": "d01",
+   "category": "直接问法",
+   "question": "员工出差住宿最多可以报销多少钱？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "500",
+    "900"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "d02",
+   "category": "直接问法",
+   "question": "商品退款需要满足什么条件？",
+   "expected_docs": [
+    "产品退款规则.md"
+   ],
+   "expected_keywords": [
+    "7天无理由",
+    "15天"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "d03",
+   "category": "直接问法",
+   "question": "经销商提现规则是什么？",
+   "expected_docs": [
+    "经销商管理制度.md",
+    "经销商结算与提现细则.docx"
+   ],
+   "expected_keywords": [
+    "1000",
+    "50万",
+    "4次"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "d04",
+   "category": "直接问法",
+   "question": "员工请婚假可以休几天？",
+   "expected_docs": [
+    "员工请假制度.md"
+   ],
+   "expected_keywords": [
+    "10天"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "d05",
+   "category": "直接问法",
+   "question": "维修完成后多久寄回？",
+   "expected_docs": [
+    "商城售后服务规则.pdf"
+   ],
+   "expected_keywords": [
+    "3个工作日"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "d06",
+   "category": "直接问法",
+   "question": "公司 VPN 怎么连接？",
+   "expected_docs": [
+    "IT服务台常见问题.txt"
+   ],
+   "expected_keywords": [
+    "星河零信任客户端"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "d07",
+   "category": "直接问法",
+   "question": "陪产假有几天？",
+   "expected_docs": [
+    "员工请假制度.md"
+   ],
+   "expected_keywords": [
+    "15天"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "d08",
+   "category": "直接问法",
+   "question": "金牌经销商的返利比例是多少？",
+   "expected_docs": [
+    "经销商管理制度.md"
+   ],
+   "expected_keywords": [
+    "5%"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "p01",
+   "category": "换种问法",
+   "question": "去上海出差，普通员工一晚的酒店能报多少？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "500"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "p02",
+   "category": "换种问法",
+   "question": "买完东西第二天降价了，能把差价退给我吗？",
+   "expected_docs": [
+    "商城售后服务规则.pdf"
+   ],
+   "expected_keywords": [
+    "价格保护",
+    "7天"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "p03",
+   "category": "换种问法",
+   "question": "电脑登录密码隔多久必须改一次？",
+   "expected_docs": [
+    "IT服务台常见问题.txt"
+   ],
+   "expected_keywords": [
+    "90天"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "p04",
+   "category": "换种问法",
+   "question": "请客户吃饭，每个人最多能花多少钱？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "300"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "p05",
+   "category": "换种问法",
+   "question": "买的水果没坏，能七天无理由退货吗？",
+   "expected_docs": [
+    "产品退款规则.md"
+   ],
+   "expected_keywords": [
+    "生鲜"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "p06",
+   "category": "换种问法",
+   "question": "报销的钱一般多久打到工资卡上？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "5个工作日"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "p07",
+   "category": "换种问法",
+   "question": "代理商跨区域卖货会被怎么处理？",
+   "expected_docs": [
+    "经销商管理制度.md"
+   ],
+   "expected_keywords": [
+    "50%"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "e01",
+   "category": "精确匹配",
+   "question": "XH-FIN-018 是哪份文件？",
+   "expected_docs": [
+    "经销商结算与提现细则.docx"
+   ],
+   "expected_keywords": [
+    "经销商结算与提现细则"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "e02",
+   "category": "精确匹配",
+   "question": "400-800-1234 是什么电话？",
+   "expected_docs": [
+    "产品退款规则.md",
+    "商城售后服务规则.pdf"
+   ],
+   "expected_keywords": [
+    "400-800-1234"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "e03",
+   "category": "精确匹配",
+   "question": "分机 8021 是哪个部门？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "财务部"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "e04",
+   "category": "精确匹配",
+   "question": "「星河商旅」是做什么用的？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "统一结算"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "m01",
+   "category": "多轮追问",
+   "history": [
+    {
+     "role": "user",
+     "content": "普通员工出差住宿标准是多少？"
+    },
+    {
+     "role": "assistant",
+     "content": "普通员工（P1-P5）出差住宿标准：一线城市 500 元/晚，二线城市 400 元/晚，三线及其他城市 300 元/晚[1]。"
+    }
+   ],
+   "question": "那总监呢？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "900"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "m02",
+   "category": "多轮追问",
+   "history": [
+    {
+     "role": "user",
+     "content": "经销商提现需要满足什么条件？"
+    },
+    {
+     "role": "assistant",
+     "content": "经销商提现需完成企业实名认证、提现到对公账户、单笔不低于 1,000 元、开具等额增值税专用发票等[1]。"
+    }
+   ],
+   "question": "一个月最多能提几次？",
+   "expected_docs": [
+    "经销商管理制度.md",
+    "经销商结算与提现细则.docx"
+   ],
+   "expected_keywords": [
+    "4次"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "m03",
+   "category": "多轮追问",
+   "history": [
+    {
+     "role": "user",
+     "content": "员工病假工资怎么算？"
+    },
+    {
+     "role": "assistant",
+     "content": "每年前 5 天病假全额发放，超过部分按基本工资的 80% 发放[1]。"
+    }
+   ],
+   "question": "那事假呢？",
+   "expected_docs": [
+    "员工请假制度.md"
+   ],
+   "expected_keywords": [
+    "无薪"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "r01",
+   "category": "应拒答",
+   "question": "公司明年的上市计划是什么？",
+   "should_refuse": true,
+   "split": "dev"
+  },
+  {
+   "id": "r02",
+   "category": "应拒答",
+   "question": "今天北京天气怎么样？",
+   "should_refuse": true,
+   "split": "test"
+  },
+  {
+   "id": "r03",
+   "category": "应拒答",
+   "question": "CEO 的手机号是多少？",
+   "should_refuse": true,
+   "split": "dev"
+  },
+  {
+   "id": "v01",
+   "category": "版本冲突",
+   "question": "普通员工去北京出差，住宿最多报多少？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "500"
+   ],
+   "forbidden_keywords": [
+    "450"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "v02",
+   "category": "版本冲突",
+   "question": "报销申请要在费用发生后多久内提交？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "30个自然日"
+   ],
+   "forbidden_keywords": [
+    "60个自然日"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "v03",
+   "category": "版本冲突",
+   "question": "出差补贴每天多少钱？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "120",
+    "100"
+   ],
+   "forbidden_keywords": [
+    "每天80元"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "v04",
+   "category": "版本冲突",
+   "question": "业务招待人均标准是多少？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "300"
+   ],
+   "forbidden_keywords": [
+    "不超过200元"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "v05",
+   "category": "版本冲突",
+   "question": "总监去二线城市出差，住宿标准是多少？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "700"
+   ],
+   "split": "dev",
+   "note": "原禁止关键词「600元/晚」会误伤正确答案：销售部补充规定里销售经理二线城市也是 600 元/晚，模型正确地作为适用范围说明提及。关键词判分无法区分上下文，故移除（调参集上发现并修正）。"
+  },
+  {
+   "id": "v06",
+   "category": "版本冲突",
+   "question": "报销款一般什么时候打到工资卡？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "周四"
+   ],
+   "forbidden_keywords": [
+    "15日"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "v07",
+   "category": "版本冲突",
+   "question": "经理级去三线城市出差住宿能报多少？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "400"
+   ],
+   "forbidden_keywords": [
+    "350"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "v08",
+   "category": "版本冲突",
+   "question": "2024 版的报销制度现在还有效吗？",
+   "expected_docs": [
+    "员工报销制度（2024版·已废止）.md",
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "废止"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "s01",
+   "category": "适用范围",
+   "question": "销售专员去上海拜访客户，住宿标准是多少？",
+   "expected_docs": [
+    "销售部差旅补充规定.md"
+   ],
+   "expected_keywords": [
+    "600"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "s02",
+   "category": "适用范围",
+   "question": "销售部的行政助理出差，住宿按什么标准？",
+   "expected_docs": [
+    "销售部差旅补充规定.md",
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "不适用"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "s03",
+   "category": "适用范围",
+   "question": "销售人员请客户吃饭，人均最多能花多少？",
+   "expected_docs": [
+    "销售部差旅补充规定.md"
+   ],
+   "expected_keywords": [
+    "400"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "s04",
+   "category": "适用范围",
+   "question": "销售自己开车去拜访客户，油费怎么报？",
+   "expected_docs": [
+    "销售部差旅补充规定.md"
+   ],
+   "expected_keywords": [
+    "1.2"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "s05",
+   "category": "适用范围",
+   "question": "普通员工去美国出差，住宿标准是多少？",
+   "expected_docs": [
+    "海外出差管理办法.md"
+   ],
+   "expected_keywords": [
+    "200美元"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "s06",
+   "category": "适用范围",
+   "question": "总监去新加坡出差，住宿能报多少？",
+   "expected_docs": [
+    "海外出差管理办法.md"
+   ],
+   "expected_keywords": [
+    "1800港元"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "s07",
+   "category": "适用范围",
+   "question": "海外出差补贴每天多少？",
+   "expected_docs": [
+    "海外出差管理办法.md"
+   ],
+   "expected_keywords": [
+    "50美元"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "s08",
+   "category": "适用范围",
+   "question": "我是研发工程师（P5），去深圳出差住宿能报多少？",
+   "expected_docs": [
+    "员工报销制度.md"
+   ],
+   "expected_keywords": [
+    "500"
+   ],
+   "forbidden_keywords": [
+    "600元/晚"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l01",
+   "category": "长文档",
+   "question": "周末加班可以调休吗？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "调休",
+    "1:1"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l02",
+   "category": "长文档",
+   "question": "法定节假日加班工资怎么算？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "300%"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "l03",
+   "category": "长文档",
+   "question": "调休要在多久之内用完？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "3个月"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l04",
+   "category": "长文档",
+   "question": "试用期多久？可以提前转正吗？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "3个月",
+    "1个月"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "l05",
+   "category": "长文档",
+   "question": "转正需要走什么流程？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "转正申请",
+    "答辩"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l06",
+   "category": "长文档",
+   "question": "年终奖什么时候发？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "3月"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l07",
+   "category": "长文档",
+   "question": "年终奖怎么计算？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "绩效系数",
+    "12"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "l08",
+   "category": "长文档",
+   "question": "全年绩效拿到 S，年终奖系数是多少？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "3.0"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l09",
+   "category": "长文档",
+   "question": "每个月几号发工资？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "10日"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "l10",
+   "category": "长文档",
+   "question": "上班迟到会扣钱吗？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "3次",
+    "50"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l11",
+   "category": "长文档",
+   "question": "每年什么时候可以申请晋升？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "4月"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l12",
+   "category": "长文档",
+   "question": "员工过生日公司有什么福利？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "300"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "l13",
+   "category": "长文档",
+   "question": "辞职要提前多久提申请？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "30天"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "l14",
+   "category": "长文档",
+   "question": "早上最晚几点打卡不算迟到？",
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "10:00"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "w01",
+   "category": "补全缺口",
+   "question": "公积金缴纳比例是多少？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "12%"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "w02",
+   "category": "补全缺口",
+   "question": "公积金基数什么时候调整？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "7月1日"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "w03",
+   "category": "补全缺口",
+   "question": "每年体检什么时候安排？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "5月"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "w04",
+   "category": "补全缺口",
+   "question": "家属可以一起体检吗？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "499"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "w05",
+   "category": "补全缺口",
+   "question": "公司餐补每个月多少钱？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "600"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "w06",
+   "category": "补全缺口",
+   "question": "员工食堂午餐几点开始？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "11:30"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "w07",
+   "category": "补全缺口",
+   "question": "公司有通勤班车吗？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "3条"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "w08",
+   "category": "补全缺口",
+   "question": "早上几点有班车？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "7:30"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "w09",
+   "category": "补全缺口",
+   "question": "公司停车位怎么申请？多少钱？",
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "300"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n01",
+   "category": "直接问法",
+   "question": "发现疑似数据泄露，要多久内上报？",
+   "expected_docs": [
+    "信息安全管理制度.md"
+   ],
+   "expected_keywords": [
+    "30分钟"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n02",
+   "category": "直接问法",
+   "question": "采购一台 8 万元的设备，需要走什么采购方式？",
+   "expected_docs": [
+    "采购管理制度.md"
+   ],
+   "expected_keywords": [
+    "三家比价"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n03",
+   "category": "直接问法",
+   "question": "300 万的合同最终由谁审批？",
+   "expected_docs": [
+    "合同审批流程.md"
+   ],
+   "expected_keywords": [
+    "CFO"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n04",
+   "category": "换种问法",
+   "question": "公司发的显示器被我弄丢了，要赔钱吗？",
+   "expected_docs": [
+    "固定资产管理办法.md"
+   ],
+   "expected_keywords": [
+    "50%"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n05",
+   "category": "直接问法",
+   "question": "推荐一个研发同学入职，能拿多少内推奖金？",
+   "expected_docs": [
+    "内部推荐奖励办法.md"
+   ],
+   "expected_keywords": [
+    "8000"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n06",
+   "category": "直接问法",
+   "question": "参加外部培训，公司每年最多报销多少？",
+   "expected_docs": [
+    "培训管理制度.md"
+   ],
+   "expected_keywords": [
+    "1万"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n07",
+   "category": "直接问法",
+   "question": "会员积分多久过期？",
+   "expected_docs": [
+    "会员积分规则.md"
+   ],
+   "expected_keywords": [
+    "12个月"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n08",
+   "category": "直接问法",
+   "question": "一个订单能同时用几张优惠券？",
+   "expected_docs": [
+    "优惠券使用规则.md"
+   ],
+   "expected_keywords": [
+    "1张"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n09",
+   "category": "换种问法",
+   "question": "买多少钱可以包邮？",
+   "expected_docs": [
+    "物流配送服务说明.md"
+   ],
+   "expected_keywords": [
+    "69"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n10",
+   "category": "直接问法",
+   "question": "客服主管单次最多能给用户补偿多少？",
+   "expected_docs": [
+    "客服服务规范.md"
+   ],
+   "expected_keywords": [
+    "200"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n11",
+   "category": "换种问法",
+   "question": "周五下午可以发版上线吗？",
+   "expected_docs": [
+    "代码发布管理规范.md"
+   ],
+   "expected_keywords": [
+    "禁止"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n12",
+   "category": "直接问法",
+   "question": "周末值班有补贴吗？",
+   "expected_docs": [
+    "值班与应急响应制度.md"
+   ],
+   "expected_keywords": [
+    "300"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n13",
+   "category": "直接问法",
+   "question": "会议室最多可以提前几天预订？",
+   "expected_docs": [
+    "会议室与办公用品管理.txt"
+   ],
+   "expected_keywords": [
+    "14天"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n14",
+   "category": "直接问法",
+   "question": "公章可以带出公司吗？",
+   "expected_docs": [
+    "印章使用管理办法.txt"
+   ],
+   "expected_keywords": [
+    "CEO"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n15",
+   "category": "直接问法",
+   "question": "新品定价对毛利率有什么要求？",
+   "expected_docs": [
+    "新品上市流程.docx"
+   ],
+   "expected_keywords": [
+    "35%"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n16",
+   "category": "直接问法",
+   "question": "开发环境的云服务器多久不用会被自动释放？",
+   "expected_docs": [
+    "云资源申请流程.txt"
+   ],
+   "expected_keywords": [
+    "60天"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "n17",
+   "category": "直接问法",
+   "question": "经销商做促销，价格低于多少需要报备？",
+   "expected_docs": [
+    "渠道价格管理办法.md"
+   ],
+   "expected_keywords": [
+    "90%"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "n18",
+   "category": "换种问法",
+   "question": "用了优惠券，发票金额按原价开吗？",
+   "expected_docs": [
+    "发票开具规则.md"
+   ],
+   "expected_keywords": [
+    "实际支付"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "x01",
+   "category": "跨文档",
+   "question": "销售经理去北京拜访客户，住宿和市内交通各能报多少？",
+   "expected_docs": [
+    "销售部差旅补充规定.md"
+   ],
+   "expected_keywords": [
+    "750",
+    "200"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "x02",
+   "category": "跨文档",
+   "question": "经销商低于最低成交价销售，会怎么处理？",
+   "expected_docs": [
+    "渠道价格管理办法.md",
+    "经销商管理制度.md"
+   ],
+   "expected_keywords": [
+    "85%",
+    "返利"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "x03",
+   "category": "跨文档",
+   "question": "新员工入职要参加什么培训？没参加会有什么影响？",
+   "expected_docs": [
+    "培训管理制度.md",
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "星河启航",
+    "转正"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "x04",
+   "category": "跨文档",
+   "question": "商品退货的时候，发票要怎么处理？",
+   "expected_docs": [
+    "发票开具规则.md",
+    "商城售后服务规则.pdf"
+   ],
+   "expected_keywords": [
+    "红冲"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "x05",
+   "category": "跨文档",
+   "question": "订单退款后，用掉的优惠券和积分怎么处理？",
+   "expected_docs": [
+    "优惠券使用规则.md",
+    "会员积分规则.md",
+    "产品退款规则.md"
+   ],
+   "expected_keywords": [
+    "优惠券",
+    "积分"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "x06",
+   "category": "跨文档",
+   "question": "总监去日本出差，可以坐公务舱吗？",
+   "expected_docs": [
+    "海外出差管理办法.md"
+   ],
+   "expected_keywords": [
+    "6小时"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "m04",
+   "category": "多轮追问",
+   "question": "那基数什么时候调整？",
+   "history": [
+    {
+     "role": "user",
+     "content": "公积金缴纳比例是多少？"
+    },
+    {
+     "role": "assistant",
+     "content": "公司和个人各缴纳 12%[1]。"
+    }
+   ],
+   "expected_docs": [
+    "员工福利手册.docx"
+   ],
+   "expected_keywords": [
+    "7月1日"
+   ],
+   "split": "test"
+  },
+  {
+   "id": "m05",
+   "category": "多轮追问",
+   "question": "具体怎么算？",
+   "history": [
+    {
+     "role": "user",
+     "content": "年终奖什么时候发？"
+    },
+    {
+     "role": "assistant",
+     "content": "年终奖于次年 3 月随工资发放[1]。"
+    }
+   ],
+   "expected_docs": [
+    "员工手册（2026版）.pdf"
+   ],
+   "expected_keywords": [
+    "绩效系数"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "m06",
+   "category": "多轮追问",
+   "question": "那销售经理呢？",
+   "history": [
+    {
+     "role": "user",
+     "content": "销售专员去上海出差住宿标准是多少？"
+    },
+    {
+     "role": "assistant",
+     "content": "销售专员 / 客户经理一线城市住宿标准为 600 元/晚[1]。"
+    }
+   ],
+   "expected_docs": [
+    "销售部差旅补充规定.md"
+   ],
+   "expected_keywords": [
+    "750"
+   ],
+   "split": "dev"
+  },
+  {
+   "id": "r05",
+   "category": "应拒答",
+   "question": "今年公司年会在哪里办？",
+   "should_refuse": true,
+   "split": "test"
+  },
+  {
+   "id": "r06",
+   "category": "应拒答",
+   "question": "CEO 的年薪是多少？",
+   "should_refuse": true,
+   "split": "dev"
+  },
+  {
+   "id": "r07",
+   "category": "应拒答",
+   "question": "明天杭州会下雨吗？",
+   "should_refuse": true,
+   "split": "dev"
+  },
+  {
+   "id": "r08",
+   "category": "应拒答",
+   "question": "公司下一轮融资的估值是多少？",
+   "should_refuse": true,
+   "split": "test"
+  },
+  {
+   "id": "r09",
+   "category": "应拒答",
+   "question": "公司健身房几点开门？",
+   "should_refuse": true,
+   "split": "dev"
+  },
+  {
+   "id": "r10",
+   "category": "应拒答",
+   "question": "员工宿舍怎么申请？",
+   "should_refuse": true,
+   "split": "test"
+  }
+ ]
+}

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import clsx from "clsx";
 import {
+  Archive,
   ArrowLeft,
   ExternalLink,
   FileUp,
@@ -233,7 +234,16 @@ export default function KBDetailPage() {
                       <div className="flex items-center gap-3">
                         <FileTypeIcon type={d.file_type} />
                         <div className="min-w-0">
-                          <div className="max-w-[300px] truncate font-medium text-zinc-800">{d.filename}</div>
+                          <div className="flex max-w-[320px] items-center gap-1.5">
+                            <span className={clsx("truncate font-medium", d.lifecycle === "deprecated" ? "text-zinc-400 line-through" : "text-zinc-800")}>
+                              {d.filename}
+                            </span>
+                            {d.lifecycle === "deprecated" && (
+                              <span title="已废止的文档默认不参与检索，只在询问历史版本时召回">
+                                <Badge tone="amber">已废止</Badge>
+                              </span>
+                            )}
+                          </div>
                           {d.status === "failed" && d.error ? (
                             <div className="max-w-[300px] truncate text-[11.5px] text-rose-500" title={d.error}>
                               {d.error}
@@ -276,6 +286,16 @@ export default function KBDetailPage() {
                           }}
                         >
                           <RefreshCw size={15} />
+                        </IconBtn>
+                        <IconBtn
+                          title={d.lifecycle === "deprecated" ? "恢复为生效" : "标记为已废止"}
+                          disabled={d.status !== "ready"}
+                          onClick={async () => {
+                            await api.setLifecycle(d.id, d.lifecycle === "deprecated" ? "active" : "deprecated");
+                            mutateDocs();
+                          }}
+                        >
+                          <Archive size={15} />
                         </IconBtn>
                         <IconBtn title="删除" danger onClick={() => setDeleting(d)}>
                           <Trash2 size={15} />

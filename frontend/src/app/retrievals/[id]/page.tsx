@@ -255,6 +255,7 @@ function ChunkCard({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[13px] font-semibold text-zinc-900">Chunk {r.rank}</span>
+          {r.deprecated && <Badge tone="amber">已废止文档</Badge>}
           {citedAs ? (
             <Badge tone="violet">引用 [{citedAs}]</Badge>
           ) : r.passed_threshold ? (

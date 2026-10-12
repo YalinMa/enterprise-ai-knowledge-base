@@ -29,6 +29,7 @@ def main() -> None:
     ap.add_argument("--kb", type=int, help="知识库 ID，默认用名称含 Demo 的知识库")
     ap.add_argument("--mode", default="retrieval", choices=["retrieval", "full"])
     ap.add_argument("--dataset", default="demo")
+    ap.add_argument("--split", default="all", choices=["all", "dev", "test"], help="调参集 dev / 测试集 test")
     ap.add_argument("--llm-model", help="覆盖生成模型（同一厂商），如 deepseek-chat，用于模型选型对比")
     ap.add_argument("--configs", default=",".join(PRESETS), help="逗号分隔：" + " / ".join(PRESETS))
     args = ap.parse_args()
@@ -37,16 +38,20 @@ def main() -> None:
     kb_id = args.kb
     if kb_id is None:
         kbs = c.get("/api/knowledge-bases").json()
-        kb = next((k for k in kbs if "Demo" in k["name"]), None)
+        want = "扩展版" if args.dataset == "extended" else "Demo"
+        kb = next((k for k in kbs if want in k["name"]), None)
         if kb is None:
             sys.exit("没有找到 Demo 知识库，请先在首页「导入 Demo 数据」或用 --kb 指定")
         kb_id = kb["id"]
 
     rows = []
     for name in args.configs.split(","):
-        body = {"kb_id": kb_id, "dataset": args.dataset, "mode": args.mode, "llm_model": args.llm_model,
+        body = {"kb_id": kb_id, "dataset": args.dataset, "split": args.split, "mode": args.mode,
+                "llm_model": args.llm_model,
                 **PRESETS[name.strip()]}
         run = c.post("/api/evals", json=body).json()
+        if "id" not in run:
+            sys.exit(f"创建评测失败：{run}")
         while run["status"] == "running":
             time.sleep(1)
             run = c.get(f"/api/evals/{run['id']}").json()
